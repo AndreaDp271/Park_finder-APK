@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Place
@@ -146,6 +147,9 @@ object MapHolder {
 
     fun get(ctx: Context): MapView {
         view?.takeIf { owner === ctx }?.let { return it }
+        // mappa di un'altra Activity ancora in vita: si congeda prima di crearne una nuova
+        view?.onDetach()
+        started = false; loadEnabled = false; labels = null; appliedStyle = null
         val map = MapView(ctx).apply {
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
@@ -154,6 +158,9 @@ object MapHolder {
             maxZoomLevel = 20.0
             val v = AppSettings.lastView
             controller.setZoom(v?.third ?: 15.0)
+            snapZoomOnPinch(this)
+            // non distruggerla quando esce dallo schermo (cambio scheda): viene riusata; la spegne release()
+            setDestroyMode(false)
             controller.setCenter(GeoPoint(v?.first ?: 45.4642, v?.second ?: 9.19))
         }
         parking = ParkingOverlay(ctx)
@@ -171,6 +178,32 @@ object MapHolder {
         })
         view = map; owner = ctx; appliedStyle = null; labels = null
         return map
+    }
+
+    /**
+     * Come lo zoomSnap di Leaflet: dopo il pizzico lo zoom si ferma su un livello intero, così le tessere sono
+     * mostrate alla loro risoluzione e non ingrandite (sgranate). Lo zoom resta ancorato al punto tra le dita.
+     */
+    private fun snapZoomOnPinch(map: MapView) {
+        var pinching = false
+        var fx = 0f; var fy = 0f
+        map.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_POINTER_DOWN, android.view.MotionEvent.ACTION_MOVE -> if (e.pointerCount >= 2) {
+                    pinching = true
+                    fx = (e.getX(0) + e.getX(1)) / 2; fy = (e.getY(0) + e.getY(1)) / 2
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> if (pinching) {
+                    pinching = false
+                    map.post {
+                        val z = map.zoomLevelDouble
+                        val target = Math.round(z).toDouble().coerceIn(map.minZoomLevel, map.maxZoomLevel)
+                        if (kotlin.math.abs(z - target) > 0.01) map.controller.zoomToFixing(target, fx.toInt(), fy.toInt(), 220L)
+                    }
+                }
+            }
+            false // il gesto prosegue normalmente verso la mappa
+        }
     }
 
     /** Durante il movimento al massimo ogni 300 ms; a movimento fermo, una volta sola. */
@@ -193,7 +226,12 @@ object MapHolder {
         ParkingRepo.onViewChanged(BBox(bb.latSouth, bb.lonWest, bb.latNorth, bb.lonEast), LatLon(c.latitude, c.longitude), z)
     }
 
-    fun release() {
+    /**
+     * Spegne la mappa solo se è di questa Activity: quando l'app si riapre, la nuova Activity può creare la sua
+     * mappa prima che la vecchia venga distrutta, e spegnere quella nuova la lascerebbe senza tessere.
+     */
+    fun release(ctx: Context) {
+        if (owner !== ctx) return
         view?.onDetach(); view = null; owner = null; started = false; loadEnabled = false; labels = null; appliedStyle = null
     }
 }
@@ -233,6 +271,7 @@ fun MapScreen(nav: Nav) {
     var recentShown by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
     var layersOpen by remember { mutableStateOf(false) }
+    var legendOpen by remember { mutableStateOf(false) }
     var sharedOpen by remember { mutableStateOf(false) }
 
     // ─── Stile, livelli, marker ───
@@ -448,6 +487,7 @@ fun MapScreen(nav: Nav) {
         ) {
             MapButton(Icons.Filled.MyLocation, t("La mia posizione"), tint = if (fix != null) MaterialTheme.colorScheme.primary else null) { locate() }
             MapButton(Icons.Filled.Layers, t("Livelli")) { layersOpen = true }
+            MapButton(Icons.Filled.Info, t("Legenda")) { legendOpen = true }
             Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 3.dp, shadowElevation = 6.dp) {
                 Column {
                     IconButton(onClick = { map.controller.zoomIn() }) { Icon(Icons.Filled.Add, t("Avvicina")) }
@@ -490,6 +530,7 @@ fun MapScreen(nav: Nav) {
         }
     }
 
+    if (legendOpen) ModalBottomSheet(onDismissRequest = { legendOpen = false }, sheetState = rememberModalBottomSheetState()) { LegendSheet() }
     if (layersOpen) ModalBottomSheet(onDismissRequest = { layersOpen = false }, sheetState = rememberModalBottomSheetState()) { LayersSheet(style, layers) }
 
     longPress?.let { p ->
@@ -651,14 +692,7 @@ private fun LayersSheet(style: String, layers: Set<Layer>) {
     Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(t("Livelli"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         SectionTitle(t("Stile della mappa"))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MapStyles.all.forEach { s ->
-                FilterChip(
-                    selected = s.id == style, onClick = { AppSettings.setMapStyle(s.id) }, label = { Text(t(s.label)) },
-                    leadingIcon = { Box(Modifier.size(18.dp).clip(CircleShape).background(swatch(s.id))) },
-                )
-            }
-        }
+        StyleGrid(style) { AppSettings.setMapStyle(it) }
         SectionTitle(t("Livelli visibili"))
         Panel(padding = 0.dp) {
             Layer.entries.forEachIndexed { i, l ->
@@ -671,11 +705,6 @@ private fun LayersSheet(style: String, layers: Set<Layer>) {
             }
         }
     }
-}
-
-private fun swatch(id: String) = when (id) {
-    "osm" -> Color(0xFFE8EBD8); "light" -> Color(0xFFDCE8F0); "cycle" -> Color(0xFFD7E4C8); "topo" -> Color(0xFFC9D8C0)
-    "gray" -> Color(0xFFD9D9D9); "dark" -> Color(0xFF2A2F3A); "satellite" -> Color(0xFF3F5A3C); else -> Color(0xFF4A5E50)
 }
 
 private fun layerColor(l: Layer) = when (l) {

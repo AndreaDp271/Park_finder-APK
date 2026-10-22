@@ -41,7 +41,7 @@ object T {
 fun t(text: String, vararg vars: Pair<String, Any?>): String {
     var out = T.tr(text)
     if (vars.isNotEmpty()) {
-        out = Regex("""\{(\w+)}""").replace(out) { m -> vars.firstOrNull { it.first == m.groupValues[1] }?.second?.toString() ?: m.value }
+        out = Regex("""\{(\w+)\}""").replace(out) { m -> vars.firstOrNull { it.first == m.groupValues[1] }?.second?.toString() ?: m.value }
     }
     return out
 }

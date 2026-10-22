@@ -153,7 +153,6 @@ fun App() {
             composable("auto") { CarScreen(nav) }
             composable("menu") { MenuScreen(nav) }
             composable("impostazioni") { SettingsScreen(nav) }
-            composable("legenda") { LegendScreen(nav) }
             composable("provider") { ProvidersScreen(nav) }
             composable("segnala") { ReportScreen(nav) }
             composable("aggiornamenti") { UpdateScreen(nav) }

@@ -6,16 +6,21 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -31,6 +36,9 @@ import kotlinx.serialization.json.longOrNull
 import okhttp3.FormBody
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.floor
@@ -94,6 +102,11 @@ object ParkingRepo {
     private val json = Json { ignoreUnknownKeys = true }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var dir: File
+    /** Pacchetto offline: le celle precalcolate scaricate in blocco (comprese, in filesDir: non le tocca "Svuota cache"). */
+    private lateinit var offlineDir: File
+    /** Nazioni (ISO 3166) con dati precalcolati scaricabili in blocco: oggi solo l'Italia. */
+    val PACK_COUNTRIES = setOf("IT")
+    private const val OFFLINE_FRESH_MS = 7 * 24 * 60 * 60 * 1000L
 
     private class Tile(var ts: Long, val elements: List<OsmElement>)
 
@@ -136,6 +149,7 @@ object ParkingRepo {
     fun init(ctx: Context) {
         if (::dir.isInitialized) return
         dir = File(ctx.cacheDir, "tiles").apply { mkdirs() }
+        offlineDir = File(ctx.filesDir, "offline").apply { mkdirs() }
         scope.launch { loadStaticIndex() }
     }
 
@@ -268,6 +282,39 @@ object ParkingRepo {
         lastView?.let { (b, c, z) -> onViewChanged(b, c, z) }
     }
 
+    /** Riscarica l'indice dei dati precalcolati (data OSM, zone coperte) e le celle della vista, saltando la cache HTTP. */
+    fun reloadStatic() {
+        scope.launch {
+            loadStaticIndex()
+            refresh()
+        }
+    }
+
+    /**
+     * Scarica in anticipo un quadrato di [span]×[span] tessere attorno a un punto (setup iniziale), così la zona è pronta anche
+     * senza rete. [onProgress] riceve (tessere pronte, totali).
+     */
+    suspend fun prefetch(center: LatLon, span: Int = 15, onProgress: (Int, Int) -> Unit) {
+        val ci = latToTile(center.lat); val cj = lonToTile(center.lon)
+        val half = span / 2
+        val refs = ArrayList<TileRef>()
+        for (i in ci - half..ci + half) for (j in cj - half..cj + half) refs += TileRef(i, j, abs(i - ci) + abs(j - cj))
+        refs.sortBy { it.dist }
+        var waited = 0
+        while (!staticSettled && waited < 8_000) { delay(200); waited += 200 }
+        withContext(Dispatchers.IO) {
+            refs.filter { !tiles.containsKey(it.key) }.forEach { r -> readFromDisk(r.key)?.let { tiles.putIfAbsent(r.key, it) } }
+        }
+        loadVisible(refs)
+        val start = System.currentTimeMillis()
+        while (true) {
+            val done = refs.count { isFresh(tiles[it.key]) }
+            onProgress(done, refs.size)
+            if (done >= refs.size || (activeBlocks + activeCells == 0 && blockQueue.isEmpty()) || System.currentTimeMillis() - start > 90_000) break
+            delay(400)
+        }
+    }
+
     fun clearCache() {
         generation++
         inflight.clear(); blockQueue.clear()
@@ -342,6 +389,94 @@ object ParkingRepo {
     private fun JsonPrimitive.double() = doubleOrNull ?: content.toDouble()
     private fun JsonPrimitive.long() = longOrNull ?: content.toLong()
 
+    private fun offlineFile(cellKey: String) = File(offlineDir, "$cellKey.json.gz")
+    private fun packMarker() = File(offlineDir, ".pack")
+
+    private fun parseCell(text: String): List<OsmElement> = expandStatic(json.parseToJsonElement(text).jsonObject["e"]!!.jsonArray)
+
+    private fun readOffline(f: File): String? = runCatching { GZIPInputStream(f.inputStream()).bufferedReader().use { it.readText() } }.getOrNull()
+
+    private fun writeOffline(f: File, text: String) {
+        runCatching {
+            val tmp = File(f.parentFile, f.name + ".tmp")
+            GZIPOutputStream(tmp.outputStream()).use { it.write(text.toByteArray()) }
+            tmp.renameTo(f)
+        }
+    }
+
+    /** Cella precalcolata: dal pacchetto offline se recente, altrimenti dalla rete (e senza rete, dal pacchetto anche se vecchio). */
+    private suspend fun loadStaticCell(cellKey: String, noCache: Boolean): List<OsmElement> {
+        val f = offlineFile(cellKey)
+        if (f.exists() && !noCache && System.currentTimeMillis() - f.lastModified() < OFFLINE_FRESH_MS) {
+            readOffline(f)?.let { return parseCell(it) }
+        }
+        try {
+            val req = Http.get(STATIC_BASE + "cells/$cellKey.json").let { if (noCache) it.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else it }
+            val text = Http.client.fetchText(req)
+            // con il pacchetto installato la cella si rinnova da sola mentre si usa la mappa
+            if (packMarker().exists()) writeOffline(f, text)
+            return parseCell(text)
+        } catch (e: IOException) {
+            readOffline(f)?.let { return parseCell(it) }
+            throw e
+        }
+    }
+
+    /** Stato del pacchetto offline: (celle salvate, byte) o null se non scaricato. */
+    fun offlinePack(): Pair<Int, Long>? {
+        if (!packMarker().exists()) return null
+        val files = offlineDir.listFiles { x -> x.name.endsWith(".json.gz") }.orEmpty()
+        return files.size to files.sumOf { it.length() }
+    }
+
+    /** Numero di celle con dati nell'area precalcolata (quante ne scarica il pacchetto), o 0 se l'indice non è arrivato. */
+    fun packCells(): Int = _staticInfo.value?.data?.size ?: 0
+
+    fun clearOfflinePack() {
+        offlineDir.listFiles()?.forEach { it.delete() }
+    }
+
+    /**
+     * Scarica tutte le celle precalcolate (tutta l'area coperta, oggi l'Italia) per usare la mappa anche senza rete.
+     * Le celle già scaricate da meno di 7 giorni si saltano, quindi si può richiamare per aggiornare o riprendere.
+     * [onProgress] riceve (celle fatte, totali); restituisce quante celle sono fallite.
+     */
+    suspend fun downloadPack(onProgress: (Int, Int) -> Unit): Int {
+        var waited = 0
+        while (!staticSettled && waited < 8_000) { delay(200); waited += 200 }
+        val info = _staticInfo.value ?: return -1
+        val cells = info.data.toList()
+        val done = AtomicInteger(0)
+        val failed = AtomicInteger(0)
+        val gate = Semaphore(12)
+        withContext(Dispatchers.IO) {
+            coroutineScope {
+                cells.map { key ->
+                    async {
+                        gate.withPermit {
+                            val f = offlineFile(key)
+                            if (!(f.exists() && System.currentTimeMillis() - f.lastModified() < OFFLINE_FRESH_MS)) {
+                                var ok = false
+                                for (attempt in 0..1) {
+                                    try {
+                                        val req = Http.get(STATIC_BASE + "cells/$key.json").newBuilder().header("Cache-Control", "no-store").build()
+                                        writeOffline(f, Http.client.fetchText(req))
+                                        ok = true; break
+                                    } catch (e: IOException) { delay(300) }
+                                }
+                                if (!ok) failed.incrementAndGet()
+                            }
+                            val d = done.incrementAndGet()
+                            if (d % 25 == 0 || d == cells.size) withContext(Dispatchers.Main) { onProgress(d, cells.size) }
+                        }
+                    }
+                }.awaitAll()
+            }
+        }
+        packMarker().writeText(System.currentTimeMillis().toString())
+        return failed.get()
+    }
+
     private fun fetchStaticCell(cellKey: String, info: StaticInfo) {
         val gen = generation
         val (ci, cj) = cellKey.split('_').map { it.toInt() }
@@ -353,10 +488,7 @@ object ParkingRepo {
         val noCache = staticFetchNoCache
         scope.launch {
             try {
-                val elements = if (cellKey in info.data) withContext(Dispatchers.IO) {
-                    val req = Http.get(STATIC_BASE + "cells/$cellKey.json").let { if (noCache) it.newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build() else it }
-                    expandStatic(json.parseToJsonElement(Http.client.fetchText(req)).jsonObject["e"]!!.jsonArray)
-                } else emptyList()
+                val elements = if (cellKey in info.data) withContext(Dispatchers.IO) { loadStaticCell(cellKey, noCache) } else emptyList()
                 if (gen == generation) applyBlock(elements, rect, true)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e

@@ -61,6 +61,11 @@ object AppSettings {
         prefs.edit().putStringSet("layers", next.map { it.name }.toSet()).apply()
     }
 
+    /** Il setup iniziale (lingua, permessi, zona) è stato completato o saltato. */
+    var onboarded: Boolean
+        get() = prefs.getBoolean("onboarded", false)
+        set(v) = prefs.edit().putBoolean("onboarded", v).apply()
+
     /** Centra la mappa sulla posizione all'avvio. */
     var locateOnStart: Boolean
         get() = prefs.getBoolean("locate_on_start", true)

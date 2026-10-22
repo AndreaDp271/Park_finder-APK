@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -32,6 +33,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -98,14 +101,9 @@ fun MenuScreen(nav: Nav) {
                     shareText(ctx, t("Guarda questa posizione su ParkMap"), url)
                 })
                 Divider()
-                Item(Icons.Filled.AddLocationAlt, orange, t("Segnala parcheggio mancante"), onClick = {
-                    val c = UiState.mapCenter.value ?: LatLon(45.4642, 9.19)
-                    UiState.report.value = ReportContext(c.lat, c.lon, null, null, "missing"); nav.go("segnala")
-                })
+                Item(Icons.Filled.AddLocationAlt, orange, t("Segnala parcheggio mancante"), t("Tieni premuto sulla mappa il punto dove si trova e scegli «Segnala parcheggio mancante»."))
             }
             Group(t("Aiuto e impostazioni")) {
-                Item(Icons.Filled.Info, purple, t("Legenda"), trailing = { Chevron() }, onClick = { nav.go("legenda") })
-                Divider()
                 Item(Icons.Filled.Timeline, gray, t("Stato provider"), t("Da dove arrivano i dati dei parcheggi"), trailing = { Chevron() }, onClick = { nav.go("provider") })
                 Divider()
                 Item(Icons.Filled.Settings, gray, t("Impostazioni"), trailing = { Chevron() }, onClick = { nav.go("impostazioni") })
@@ -119,7 +117,7 @@ fun MenuScreen(nav: Nav) {
 private class LegendItem(val label: String, val fill: Color, val stroke: Color, val round: Boolean = false)
 
 @Composable
-fun LegendScreen(nav: Nav) {
+fun LegendSheet() {
     val groups = listOf(
         t("Aree di sosta") to listOf(
             LegendItem(t("Pagamento"), Color(0xFF60A5FA), Color(0xFF1D4ED8)), LegendItem(t("Gratuito"), Color(0xFF4ADE80), Color(0xFF15803D)),
@@ -136,21 +134,19 @@ fun LegendScreen(nav: Nav) {
             LegendItem(t("Parcheggio bici"), Color(0xFFBEF264), Color(0xFF4D7C0F), true),
         ),
     )
-    Column(Modifier.fillMaxSize()) {
-        Bar(t("Legenda"), onBack = nav::back)
-        LazyColumn(contentPadding = screenPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            groups.forEach { (title, items) ->
-                item {
-                    SectionTitle(title)
-                    Panel(Modifier.padding(top = 4.dp)) {
-                        items.forEach { it ->
-                            Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    Modifier.size(16.dp).clip(if (it.round) CircleShape else RoundedCornerShape(4.dp)).background(it.stroke).padding(1.5.dp)
-                                        .clip(if (it.round) CircleShape else RoundedCornerShape(3.dp)).background(it.fill),
-                                )
-                                Text(it.label, Modifier.padding(start = 14.dp))
-                            }
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(t("Legenda"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        groups.forEach { (title, items) ->
+            Column {
+                SectionTitle(title)
+                Panel(Modifier.padding(top = 4.dp)) {
+                    items.forEach { it ->
+                        Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(16.dp).clip(if (it.round) CircleShape else RoundedCornerShape(4.dp)).background(it.stroke).padding(1.5.dp)
+                                    .clip(if (it.round) CircleShape else RoundedCornerShape(3.dp)).background(it.fill),
+                            )
+                            Text(it.label, Modifier.padding(start = 14.dp))
                         }
                     }
                 }
@@ -168,6 +164,9 @@ fun ProvidersScreen(nav: Nav) {
     val center by UiState.mapCenter.collectAsState()
     val (zones, bytes) = remember { ParkingRepo.cacheStats() }
     val (precomputed, osmTs) = center?.let { ParkingRepo.sourceAt(it) } ?: (false to null)
+    val scope = rememberCoroutineScope()
+    var pack by remember { mutableStateOf(ParkingRepo.offlinePack()) }
+    var packProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     Column(Modifier.fillMaxSize()) {
         Bar(t("Provider dati OSM"), onBack = nav::back)
         LazyColumn(contentPadding = screenPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -203,8 +202,40 @@ fun ProvidersScreen(nav: Nav) {
                 }
             }
             item {
-                Button(onClick = { ParkingRepo.refresh(); UiState.say(t("Aggiornamento dati...")); nav.tab("mappa") }, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = { ParkingRepo.refresh(); UiState.say(t("Aggiornamento dati...")) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp)); Text(t("Aggiorna ora"), Modifier.padding(start = 8.dp))
+                }
+            }
+            if (info != null) item {
+                Panel {
+                    val pp = packProgress
+                    Text(t("Dati offline"), fontWeight = FontWeight.SemiBold)
+                    Text(
+                        pack?.let { (n, b) -> t("Italia scaricata: {n} zone · {size}", "n" to n, "size" to android.text.format.Formatter.formatShortFileSize(LocalContext.current, b)) }
+                            ?: t("Scarica tutti i parcheggi precalcolati per usare la mappa anche senza rete."),
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    )
+                    if (pp != null) {
+                        LinearProgressIndicator(progress = { pp.first.toFloat() / pp.second }, modifier = Modifier.fillMaxWidth())
+                        Text("${pp.first} / ${pp.second}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                packProgress = 0 to maxOf(1, ParkingRepo.packCells())
+                                scope.launch {
+                                    val failed = ParkingRepo.downloadPack { d, total -> packProgress = d to total }
+                                    packProgress = null; pack = ParkingRepo.offlinePack()
+                                    UiState.say(if (failed > 0) t("Alcuni file non sono stati scaricati: riprova da Menu › Stato provider.") else t("Fatto"))
+                                }
+                            }) { Text(if (pack == null) t("Scarica tutta l'Italia") else t("Aggiorna")) }
+                            if (pack != null) OutlinedButton(onClick = { ParkingRepo.clearOfflinePack(); pack = null }) { Text(t("Elimina")) }
+                        }
+                    }
+                }
+            }
+            item {
+                OutlinedButton(onClick = { ParkingRepo.reloadStatic(); UiState.say(t("Scarico i dati precalcolati...")) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.CloudDownload, null, Modifier.size(18.dp)); Text(t("Riscarica dati precalcolati"), Modifier.padding(start = 8.dp))
                 }
             }
         }

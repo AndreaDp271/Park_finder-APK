@@ -29,6 +29,7 @@ object Http {
         if (::client.isInitialized) return
         client = OkHttpClient.Builder()
             .cache(Cache(File(ctx.cacheDir, "http"), 40L * 1024 * 1024))
+            .dispatcher(okhttp3.Dispatcher().apply { maxRequests = 48; maxRequestsPerHost = 16 })
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().header("User-Agent", userAgent).build()) }

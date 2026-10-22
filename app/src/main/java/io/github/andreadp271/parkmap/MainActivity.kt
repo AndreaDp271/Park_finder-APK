@@ -9,6 +9,10 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import io.github.andreadp271.parkmap.data.AppAction
 import io.github.andreadp271.parkmap.data.AppSettings
@@ -23,6 +27,7 @@ import io.github.andreadp271.parkmap.ui.App
 import io.github.andreadp271.parkmap.ui.Focus
 import io.github.andreadp271.parkmap.ui.LocationTracker
 import io.github.andreadp271.parkmap.ui.MapHolder
+import io.github.andreadp271.parkmap.ui.Onboarding
 import io.github.andreadp271.parkmap.ui.ParkMapTheme
 import io.github.andreadp271.parkmap.ui.UiState
 import io.github.andreadp271.parkmap.ui.isDark
@@ -86,7 +91,10 @@ class MainActivity : ComponentActivity() {
                 else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
                 enableEdgeToEdge(style, style)
             }
-            ParkMapTheme { App() }
+            ParkMapTheme {
+                var onboarded by remember { mutableStateOf(AppSettings.onboarded) }
+                if (onboarded) App() else Onboarding { AppSettings.onboarded = true; onboarded = true }
+            }
         }
     }
 
@@ -114,7 +122,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         // la mappa è conservata tra le schede: va rilasciata con l'Activity che la ospita
-        MapHolder.release()
+        MapHolder.release(this)
         super.onDestroy()
     }
 }

@@ -127,9 +127,9 @@ object Geocoder {
     }
 
     /** Nominatim: località e anche indirizzi e luoghi, che diventano la destinazione attorno a cui cercare parcheggio. */
-    private suspend fun placeWorldwide(q: String, center: LatLon): List<SearchResult> = try {
+    private suspend fun placeWorldwide(q: String, center: LatLon, byDistance: Boolean = true, country: String? = null): List<SearchResult> = try {
         val qLower = q.trim().lowercase()
-        nominatim("q=${enc(q)}&limit=25").mapNotNull { e ->
+        nominatim("q=${enc(q)}&limit=25" + (country?.let { "&countrycodes=${it.lowercase()}" } ?: "")).mapNotNull { e ->
             val r = e.jsonObject
             val a = r.obj("address")
             val country = a?.str("country")
@@ -159,11 +159,15 @@ object Geocoder {
             // Una strada lunga arriva a pezzi con lo stesso nome: se ne tiene uno
             .distinctBy { it.display }
             // Il nome identico alla ricerca prima delle frazioni omonime, poi i più vicini
-            .sortedWith(compareBy<SearchResult> { if (it.name.lowercase() == qLower) 0 else 1 }.thenBy { distanceM(center.lat, center.lon, it.lat, it.lon) })
+            .sortedWith(compareBy<SearchResult> { if (it.name.lowercase() == qLower) 0 else 1 }.thenBy { if (byDistance) distanceM(center.lat, center.lon, it.lat, it.lon) else 0.0 })
             .take(6)
     } catch (_: Exception) {
         emptyList()
     }
+
+    /** Solo città e paesi di tutto il mondo, nell'ordine di importanza di Nominatim (setup iniziale: nessun punto di riferimento). */
+    suspend fun searchPlaces(q: String, country: String? = null): List<SearchResult> =
+        placeWorldwide(q, LatLon(0.0, 0.0), byDistance = false, country = country).filter { it.place }
 
     suspend fun search(q: String, center: LatLon): SearchOutcome {
         if (Regex("^\\d{4,6}$").matches(q)) return postcode(q, center) ?: SearchOutcome.NotFound(t("CAP non trovato su OSM"))

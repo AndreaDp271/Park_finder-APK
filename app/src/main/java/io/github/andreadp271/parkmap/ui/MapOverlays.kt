@@ -80,7 +80,7 @@ class ParkingOverlay(private val ctx: Context) : Overlay() {
         }
         if (kind == Kind.CHARGING) {
             val c = el.center ?: return null
-            return Item(el, z, Shape.EV, 0xFF059669.toInt(), 0xFFFFFFFF.toInt(), null, c.lat, c.lon, c.lat, c.lon, c.lat, c.lon, 11f, 2f, 255)
+            return Item(el, z, Shape.EV, 0xFF059669.toInt(), 0xFFFFFFFF.toInt(), null, c.lat, c.lon, c.lat, c.lon, c.lat, c.lon, 10f, 2f, 255)
         }
         if (g != null && g.size >= 4) {
             var s = 90.0; var n = -90.0; var w = 180.0; var e = -180.0
@@ -152,7 +152,7 @@ class ParkingOverlay(private val ctx: Context) : Overlay() {
                     strokePaint.color = it.stroke; strokePaint.alpha = 255; strokePaint.strokeWidth = 2f * density
                     c.drawCircle(pt.x.toFloat(), pt.y.toFloat(), r, strokePaint)
                     bolt?.let { d ->
-                        val h = (r * 1.25f).toInt()
+                        val h = (r * 0.78f).toInt()
                         d.setBounds(pt.x - h, pt.y - h, pt.x + h, pt.y + h)
                         d.draw(c)
                     }
@@ -177,8 +177,11 @@ class ParkingOverlay(private val ctx: Context) : Overlay() {
             if (tap.lat < it.south - degTol || tap.lat > it.north + degTol || tap.lon < it.west - degTol * 2 || tap.lon > it.east + degTol * 2) continue
             val d = distanceTo(it, tap, mpp)
             if (d > tolM) continue
-            // sopra vince l'elemento con z maggiore; a parità, il più vicino
-            if (best == null || it.z > best.z || (it.z == best.z && d < bestD)) { best = it; bestD = d }
+            // chi è colpito davvero (dentro l'area o sul segno) batte chi è solo vicino; poi vince la z maggiore, poi il più vicino
+            val better = best == null ||
+                (d == 0.0) != (bestD == 0.0) && d == 0.0 ||
+                (d == 0.0) == (bestD == 0.0) && (it.z > best.z || (it.z == best.z && d < bestD))
+            if (better) { best = it; bestD = d }
         }
         val hit = best ?: return false
         onTap?.invoke(hit.el)
