@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Testi in inglese (lingua predefinita); in italiano: values-it/parkmap_strings.xml -->
+<resources>
+    <string name="parkmap_widget_label">My car</string>
+    <string name="parkmap_widget_description">Where you parked and how long until parking expires</string>
+    <string name="parkmap_widget_no_car">No car saved</string>
+    <string name="parkmap_widget_no_car_hint">Save where you park</string>
+    <string name="parkmap_widget_save">I parked</string>
+    <string name="parkmap_widget_parked">Car parked</string>
+    <string name="parkmap_widget_open">Open</string>
+    <string name="parkmap_widget_since">since %1$s</string>
+    <string name="parkmap_widget_expires">expires at %1$s</string>
+    <string name="parkmap_widget_expired">parking expired at %1$s</string>
+
+
+    <string name="parkmap_shortcut_save_short">I parked</string>
+    <string name="parkmap_shortcut_save_long">I parked here</string>
+    <string name="parkmap_shortcut_show_short">My car</string>
+    <string name="parkmap_shortcut_show_long">Where is my car?</string>
+    <string name="parkmap_shortcut_nearby_short">Nearby</string>
+    <string name="parkmap_shortcut_nearby_long">Parking nearby</string>
+</resources>

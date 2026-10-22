@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- promemoria della sosta e auto salvata via Bluetooth (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- posizione sulla mappa, chiesta solo all'uso -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <!-- Salvataggio automatico dell'auto via Bluetooth: dispositivi associati (Android 12+),
+         eventi di disconnessione (fino ad Android 11) e posizione letta con l'app in background -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <!-- promemoria puntuali alla scadenza della sosta, se Android lo consente -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- gli allarmi si perdono al riavvio: i promemoria della sosta vanno ripianificati -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- aggiornamenti scaricati dalle release di GitHub -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ParkMap">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|locale|layoutDirection"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Link condivisi dalla web app: https://andreadp271.github.io/Park_finder/?lat=..&lon=..&z=.. oppure ?car=lat,lon -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="andreadp271.github.io" android:pathPrefix="/Park_finder" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="geo" />
+            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/parkmap_shortcuts" />
+        </activity>
+
+        <!-- Widget "La mia auto" -->
+        <receiver
+            android:name=".widget.ParkMapWidget"
+            android:exported="false"
+            android:label="@string/parkmap_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/parkmap_widget_info" />
+        </receiver>
+
+        <!-- Esito dell'installazione dell'aggiornamento (PackageInstaller) -->
+        <receiver
+            android:name=".data.UpdateReceiver"
+            android:exported="false" />
+
+        <!-- Promemoria della sosta (10 minuti prima e alla scadenza) -->
+        <receiver
+            android:name=".data.CarReminderReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".data.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Connessione/disconnessione dal Bluetooth dell'auto: le invia lo stack Bluetooth,
+             che ha un proprio utente di sistema, quindi exported="true" -->
+        <receiver
+            android:name=".data.BluetoothCarReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

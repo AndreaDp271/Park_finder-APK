@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Scorciatoie tenendo premuta l'icona dell'app: aprono l'app con un'azione
+     (extra "parkmap_action"), eseguita dalla pagina come per il widget. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="save_car"
+        android:enabled="true"
+        android:icon="@drawable/parkmap_shortcut_save"
+        android:shortcutShortLabel="@string/parkmap_shortcut_save_short"
+        android:shortcutLongLabel="@string/parkmap_shortcut_save_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.andreadp271.parkmap"
+            android:targetClass="io.github.andreadp271.parkmap.MainActivity">
+            <extra android:name="parkmap_action" android:value="saveCar" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="show_car"
+        android:enabled="true"
+        android:icon="@drawable/parkmap_shortcut_car"
+        android:shortcutShortLabel="@string/parkmap_shortcut_show_short"
+        android:shortcutLongLabel="@string/parkmap_shortcut_show_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.andreadp271.parkmap"
+            android:targetClass="io.github.andreadp271.parkmap.MainActivity">
+            <extra android:name="parkmap_action" android:value="showCar" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="nearby"
+        android:enabled="true"
+        android:icon="@drawable/parkmap_shortcut_nearby"
+        android:shortcutShortLabel="@string/parkmap_shortcut_nearby_short"
+        android:shortcutLongLabel="@string/parkmap_shortcut_nearby_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="io.github.andreadp271.parkmap"
+            android:targetClass="io.github.andreadp271.parkmap.MainActivity">
+            <extra android:name="parkmap_action" android:value="nearby" />
+        </intent>
+    </shortcut>
+</shortcuts>

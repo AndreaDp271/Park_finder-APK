@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="parkmap_widget_label">La mia auto</string>
+    <string name="parkmap_widget_description">Dove hai parcheggiato e quanto manca alla fine della sosta</string>
+    <string name="parkmap_widget_no_car">Nessuna auto salvata</string>
+    <string name="parkmap_widget_no_car_hint">Salva dove parcheggi</string>
+    <string name="parkmap_widget_save">Ho parcheggiato</string>
+    <string name="parkmap_widget_parked">Auto parcheggiata</string>
+    <string name="parkmap_widget_open">Apri</string>
+    <string name="parkmap_widget_since">dalle %1$s</string>
+    <string name="parkmap_widget_expires">scade alle %1$s</string>
+    <string name="parkmap_widget_expired">sosta scaduta alle %1$s</string>
+
+
+    <string name="parkmap_shortcut_save_short">Ho parcheggiato</string>
+    <string name="parkmap_shortcut_save_long">Ho parcheggiato qui</string>
+    <string name="parkmap_shortcut_show_short">La mia auto</string>
+    <string name="parkmap_shortcut_show_long">Dov\'è la mia auto?</string>
+    <string name="parkmap_shortcut_nearby_short">Vicini</string>
+    <string name="parkmap_shortcut_nearby_long">Parcheggi vicini</string>
+</resources>

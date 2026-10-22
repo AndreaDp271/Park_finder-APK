@@ -1,0 +1,13 @@
+ParkMap trova dove parcheggiare con i dati di OpenStreetMap: aree di sosta a pagamento, gratuite e a disco orario, stalli per disabili, colonnine di ricarica, parcheggi per moto e bici e parcometri.
+
+• Mappa con filtri (gratis adesso, disco orario, disabili, ricarica EV, moto, bici) e stili Standard, Umanitario, Ciclabile, Rilievo, Grigio, Notte, Satellite
+• Orari di pagamento interpretati: "gratis adesso" e costo stimato per la durata che scegli
+• Cerca un indirizzo e vedi i parcheggi vicini con la distanza a piedi
+• La mia auto: salva dove hai parcheggiato, con nota, foto, promemoria di scadenza, storico e navigazione a piedi per tornarci
+• Salvataggio automatico quando il telefono si scollega dal Bluetooth dell'auto
+• Widget "La mia auto" e scorciatoie dell'icona
+• Preferiti e segnalazione degli errori come note su OpenStreetMap
+• Italiano e inglese, tema chiaro e scuro, colori dallo sfondo (Android 12+)
+• Nessun servizio Google, nessuna pubblicità, nessun account
+
+Esiste anche la versione web per computer e iPhone: https://andreadp271.github.io/Park_finder/

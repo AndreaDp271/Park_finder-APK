@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/parkmap_widget_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="12dp">
+
+    <ImageView
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:contentDescription="@string/parkmap_widget_label"
+        android:src="@mipmap/ic_launcher_round" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="8dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/parkmap_widget_text"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Chronometer
+                android:id="@+id/widget_timer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:textColor="@color/parkmap_widget_accent"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/widget_subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/parkmap_widget_text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_button"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:background="@drawable/parkmap_widget_button"
+        android:gravity="center"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+</LinearLayout>

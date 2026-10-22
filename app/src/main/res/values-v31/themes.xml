@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.ParkMap" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/parkmap_window</item>
+        <item name="android:windowSplashScreenBackground">@color/parkmap_brand</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+    </style>
+</resources>

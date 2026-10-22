@@ -1,0 +1,13 @@
+ParkMap finds where to park using OpenStreetMap data: paid, free and disc-zone parking, disabled bays, charging stations, motorcycle and bicycle parking and parking meters.
+
+• Map with filters (free now, disc, disabled, EV charging, motorcycle, bicycle) and Standard, Humanitarian, Cycle, Topographic, Gray, Night and Satellite styles
+• Payment times interpreted: "free now" and an estimated cost for the duration you choose
+• Search an address and see nearby parking with walking distance
+• My car: save where you parked, with a note, photo, expiry reminder, history and walking directions back to it
+• Automatic save when the phone disconnects from the car's Bluetooth
+• "My car" widget and icon shortcuts
+• Favourites and error reports sent as OpenStreetMap notes
+• Italian and English, light and dark theme, wallpaper colours (Android 12+)
+• No Google services, no ads, no account
+
+A web version for computers and iPhone is also available: https://andreadp271.github.io/Park_finder/

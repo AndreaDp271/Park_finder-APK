@@ -1,0 +1,1 @@
+New native app with the same look as Capotreno and CastelSafe: smooth map, search, filters, nearby parking list, favourites, parking cost estimate, parked car with reminders and photo, automatic save over Bluetooth, widget and shortcuts. Installs over the previous version.
