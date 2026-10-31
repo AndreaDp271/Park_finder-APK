@@ -5,6 +5,12 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # A mano (Actions › Release › Run workflow): ricostruisce e firma un tag già esistente
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag da pubblicare (es. v2.1.0)'
+        required: true
 
 permissions:
   contents: write
@@ -14,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -41,13 +49,19 @@ jobs:
       - name: Pubblica la release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG#v}"
           CODE=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
           cp app/build/outputs/apk/release/app-release.apk "ParkMap-$VERSION.apk"
+          # Già pubblicata (es. dal PC): non si tocca l'APK che gli utenti stanno scaricando
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "La release $TAG esiste già: build e firma verificate, nulla da pubblicare."
+            exit 0
+          fi
           NOTES="fastlane/metadata/android/it-IT/changelogs/$CODE.txt"
           [ -f "$NOTES" ] || NOTES=/dev/null
-          gh release create "$GITHUB_REF_NAME" "ParkMap-$VERSION.apk" --title "ParkMap $VERSION" --notes-file "$NOTES"
+          gh release create "$TAG" "ParkMap-$VERSION.apk" --title "ParkMap $VERSION" --notes-file "$NOTES"
       - name: Pulizia
         if: always()
         run: rm -f "$RUNNER_TEMP/release.p12" keystore.properties
