@@ -134,7 +134,13 @@ object Updater {
         val apk = pm.getPackageArchiveInfo(file.path, flags) ?: run { file.delete(); throw IOException("File scaricato non valido") }
         val me = pm.getPackageInfo(ctx.packageName, flags)
         val ok = apk.packageName == ctx.packageName && signers(apk) == signers(me) && signers(me).isNotEmpty()
-        if (!ok) { file.delete(); throw IOException("L'APK scaricato non è firmato come questa app: installazione annullata") }
+        if (!ok) {
+            file.delete()
+            throw IOException(
+                if (BuildConfig.DEBUG) "Questa è la versione di sviluppo (firmata con la chiave di debug): la release di GitHub non si può installare sopra. Disinstallala e installa ParkMap dalla pagina delle release."
+                else "L'APK scaricato non è firmato come questa app: installazione annullata",
+            )
+        }
         @Suppress("DEPRECATION")
         val newer = if (Build.VERSION.SDK_INT >= 28) apk.longVersionCode > me.longVersionCode else apk.versionCode > me.versionCode
         if (!newer) { file.delete(); throw IOException("La versione su GitHub non è più recente di quella installata") }

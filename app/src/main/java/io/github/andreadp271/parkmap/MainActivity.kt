@@ -104,9 +104,10 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // il pallino della posizione segue solo finché l'app è visibile
         if (MapHolder.started) LocationTracker.start(this)
-        // nuove versioni su GitHub: al massimo una volta al giorno (non se è installata da un negozio di app)
+        // nuove versioni su GitHub: al massimo una volta al giorno (non se è installata da un negozio di app,
+        // né nella build di sviluppo, firmata con la chiave di debug: la release non si installerebbe sopra)
         val now = System.currentTimeMillis()
-        if (AppSettings.autoUpdateCheck && now - AppSettings.lastUpdateCheck > 24 * 3600_000L && !Updater.fromStore(this)) {
+        if (!BuildConfig.DEBUG && AppSettings.autoUpdateCheck && now - AppSettings.lastUpdateCheck > 24 * 3600_000L && !Updater.fromStore(this)) {
             lifecycleScope.launch {
                 runCatching { Updater.latest() }.getOrNull()?.let { r ->
                     AppSettings.lastUpdateCheck = System.currentTimeMillis()
