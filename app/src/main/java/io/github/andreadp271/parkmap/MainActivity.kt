@@ -23,6 +23,7 @@ import io.github.andreadp271.parkmap.data.Library
 import io.github.andreadp271.parkmap.data.ParkingRepo
 import io.github.andreadp271.parkmap.data.T
 import io.github.andreadp271.parkmap.data.Updater
+import io.github.andreadp271.parkmap.data.ZtlRepo
 import io.github.andreadp271.parkmap.ui.App
 import io.github.andreadp271.parkmap.ui.Focus
 import io.github.andreadp271.parkmap.ui.LocationTracker
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
         Library.init(this)
         CarStore.init(this)
         ParkingRepo.init(this)
+        ZtlRepo.init(this)
         CarReminders.createChannel(this)
         // osmdroid: User-Agent identificativo (richiesto dalla tile policy OSM) e cache nello spazio privato dell'app
         Configuration.getInstance().apply {

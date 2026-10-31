@@ -282,12 +282,22 @@ object ParkingRepo {
         lastView?.let { (b, c, z) -> onViewChanged(b, c, z) }
     }
 
-    /** Riscarica l'indice dei dati precalcolati (data OSM, zone coperte) e le celle della vista, saltando la cache HTTP. */
-    fun reloadStatic() {
-        scope.launch {
-            loadStaticIndex()
-            refresh()
-        }
+    /**
+     * Riscarica l'indice dei dati precalcolati (data OSM, zone coperte) e le celle della vista, saltando la cache HTTP.
+     * Finisce quando i download della zona sono terminati; false se l'indice non è arrivato.
+     */
+    suspend fun reloadStatic(): Boolean {
+        val ok = withContext(Dispatchers.Main.immediate) { loadStaticIndex() }
+        refresh()
+        awaitIdle()
+        return ok
+    }
+
+    /** Aspetta (al massimo 30 s) che i download in corso per la vista finiscano. */
+    suspend fun awaitIdle() {
+        delay(300)
+        var waited = 0
+        while ((activeBlocks + activeCells > 0 || blockQueue.isNotEmpty()) && waited < 30_000) { delay(300); waited += 300 }
     }
 
     /**
@@ -349,7 +359,8 @@ object ParkingRepo {
         return set
     }
 
-    private suspend fun loadStaticIndex() {
+    private suspend fun loadStaticIndex(): Boolean {
+        var ok = false
         try {
             val text = withContext(Dispatchers.IO) {
                 val req = Http.get(STATIC_BASE + "index.json").newBuilder().cacheControl(okhttp3.CacheControl.FORCE_NETWORK).build()
@@ -363,6 +374,7 @@ object ParkingRepo {
                         (idx["osmTimestamp"] ?: idx["generated"])?.jsonPrimitive?.contentOrNull,
                     )
                 }
+                ok = true
             }
         } catch (_: Exception) {
             // niente dati statici: si usa solo Postpass/Overpass
@@ -370,6 +382,7 @@ object ParkingRepo {
             staticSettled = true
             lastView?.let { (b, c, z) -> if (z >= MIN_DATA_ZOOM) loadVisible(tilesForView(b, c)) }
         }
+        return ok
     }
 
     private fun primitiveString(e: JsonElement?): String? = (e as? JsonPrimitive)?.contentOrNull

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.HourglassBottom
 import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PedalBike
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Schedule
@@ -94,6 +95,7 @@ fun iconFor(name: String?): ImageVector = when (name) {
     "gauge" -> Icons.Filled.Speed
     "plug" -> Icons.Filled.Power
     "lock" -> Icons.Filled.Lock
+    "lock-open" -> Icons.Filled.LockOpen
     "umbrella" -> Icons.Filled.Umbrella
     "battery" -> Icons.Filled.BatteryChargingFull
     else -> Icons.Filled.Block

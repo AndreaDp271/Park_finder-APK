@@ -19,7 +19,8 @@ enum class Filter(val label: String) {
 /** Livelli visibili (Livelli → "Livelli visibili"). */
 enum class Layer(val label: String) {
     AREAS("Aree di sosta"), SPACES("Stalli speciali"), METERS("Parcometri"),
-    CHARGING("Colonnine di ricarica"), MOTO("Parcheggi moto"), BIKES("Parcheggi bici")
+    CHARGING("Colonnine di ricarica"), MOTO("Parcheggi moto"), BIKES("Parcheggi bici"),
+    ZTL("Zone a traffico limitato (ZTL)")
 }
 
 /** Elemento OSM (nodo o way) con i soli tag usati dall'app. [g] = lat, lon, lat, lon... */

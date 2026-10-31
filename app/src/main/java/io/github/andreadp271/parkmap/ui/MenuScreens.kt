@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddLocationAlt
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
@@ -67,6 +68,7 @@ private val green = Color(0xFF16A34A)
 private val orange = Color(0xFFEA580C)
 private val purple = Color(0xFF7C3AED)
 private val gray = Color(0xFF64748B)
+private val red = Color(0xFFDC2626)
 
 /** Scheda "Menu": strumenti, aiuto e impostazioni. */
 @Composable
@@ -102,6 +104,8 @@ fun MenuScreen(nav: Nav) {
                 })
                 Divider()
                 Item(Icons.Filled.AddLocationAlt, orange, t("Segnala parcheggio mancante"), t("Tieni premuto sulla mappa il punto dove si trova e scegli «Segnala parcheggio mancante»."))
+                Divider()
+                Item(Icons.Filled.Block, red, t("Segnala ZTL mancante"), t("Tieni premuto sulla mappa dentro la zona e scegli «Segnala ZTL mancante»."))
             }
             Group(t("Aiuto e impostazioni")) {
                 Item(Icons.Filled.Timeline, gray, t("Stato provider"), t("Da dove arrivano i dati dei parcheggi"), trailing = { Chevron() }, onClick = { nav.go("provider") })
@@ -129,6 +133,9 @@ fun LegendSheet() {
             LegendItem(t("Carico/Scarico"), Color(0xFFFED7AA), Color(0xFFD97706)), LegendItem(t("Famiglie/Rosa"), Color(0xFFFBCFE8), Color(0xFFDB2777)),
         ),
         t("Parcometri") to listOf(LegendItem(t("Parcometro (ticket)"), Color(0xFFF97316), Color(0xFF111827), true)),
+        t("ZTL") to listOf(
+            LegendItem(t("Attiva adesso"), Color(0x40DC2626), Color(0xFFDC2626)), LegendItem(t("Non attiva adesso"), Color(0x4016A34A), Color(0xFF16A34A)),
+        ),
         t("Altri servizi") to listOf(
             LegendItem(t("Colonnina di ricarica"), Color(0xFF059669), Color(0xFF047857), true), LegendItem(t("Parcheggio moto"), Color(0xFFFCA5A5), Color(0xFFB91C1C), true),
             LegendItem(t("Parcheggio bici"), Color(0xFFBEF264), Color(0xFF4D7C0F), true),
@@ -162,7 +169,10 @@ fun ProvidersScreen(nav: Nav) {
     val providers by ParkingRepo.providers.collectAsState()
     val info by ParkingRepo.staticInfo.collectAsState()
     val center by UiState.mapCenter.collectAsState()
-    val (zones, bytes) = remember { ParkingRepo.cacheStats() }
+    // busy: azione in corso ("refresh" o "static"); done: esito da mostrare sotto i pulsanti (ok?, testo)
+    var busy by remember { mutableStateOf<String?>(null) }
+    var done by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    val (zones, bytes) = remember(busy) { ParkingRepo.cacheStats() }
     val (precomputed, osmTs) = center?.let { ParkingRepo.sourceAt(it) } ?: (false to null)
     val scope = rememberCoroutineScope()
     var pack by remember { mutableStateOf(ParkingRepo.offlinePack()) }
@@ -202,8 +212,20 @@ fun ProvidersScreen(nav: Nav) {
                 }
             }
             item {
-                Button(onClick = { ParkingRepo.refresh(); UiState.say(t("Aggiornamento dati...")) }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp)); Text(t("Aggiorna ora"), Modifier.padding(start = 8.dp))
+                Button(
+                    enabled = busy == null, modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        busy = "refresh"; done = null
+                        ParkingRepo.refresh()
+                        scope.launch {
+                            ParkingRepo.awaitIdle()
+                            busy = null
+                            done = true to t("Dati della zona aggiornati.")
+                        }
+                    },
+                ) {
+                    if (busy == "refresh") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
+                    Text(if (busy == "refresh") t("Aggiornamento dati...") else t("Aggiorna ora"), Modifier.padding(start = 8.dp))
                 }
             }
             if (info != null) item {
@@ -234,10 +256,23 @@ fun ProvidersScreen(nav: Nav) {
                 }
             }
             item {
-                OutlinedButton(onClick = { ParkingRepo.reloadStatic(); UiState.say(t("Scarico i dati precalcolati...")) }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.CloudDownload, null, Modifier.size(18.dp)); Text(t("Riscarica dati precalcolati"), Modifier.padding(start = 8.dp))
+                OutlinedButton(
+                    enabled = busy == null, modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        busy = "static"; done = null
+                        scope.launch {
+                            val ok = ParkingRepo.reloadStatic()
+                            busy = null
+                            done = if (ok) true to t("Dati precalcolati riscaricati: OSM del {date}.", "date" to (ParkingRepo.staticInfo.value?.osmTimestamp?.take(10) ?: "?"))
+                            else false to t("Non sono riuscito a scaricare i dati precalcolati. Controlla la connessione e riprova.")
+                        }
+                    },
+                ) {
+                    if (busy == "static") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Filled.CloudDownload, null, Modifier.size(18.dp))
+                    Text(if (busy == "static") t("Scarico i dati precalcolati...") else t("Riscarica dati precalcolati"), Modifier.padding(start = 8.dp))
                 }
             }
+            done?.let { (ok, msg) -> item { Text(msg, color = if (ok) Color(0xFF16A34A) else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) } }
         }
     }
 }
@@ -267,7 +302,12 @@ private fun KeyValue(key: String, value: String) {
 fun ReportScreen(nav: Nav) {
     val ctx = UiState.report.collectAsState().value
     val scope = rememberCoroutineScope()
-    val types = linkedMapOf(
+    val types = if (ctx?.ztl == true) linkedMapOf(
+        "missing" to (t("ZTL mancante") to t("Es. ZTL del centro storico, varchi in via Roma e piazza Garibaldi, attiva lun-ven 8-20. Sito del Comune: ...")),
+        "wrong" to (t("Orari o confini sbagliati") to t("Cosa non è corretto? Es. d'estate è attiva anche di sera, 20-24.")),
+        "gone" to (t("Non esiste più") to t("Es. la ZTL è stata abolita / i varchi sono spenti.")),
+        "other" to (t("Altro") to t("Descrivi la situazione.")),
+    ) else linkedMapOf(
         "missing" to (t("Parcheggio mancante") to t("Es. parcheggio gratuito con circa 20 posti, ingresso da via Roma.")),
         "wrong" to (t("Informazioni sbagliate") to t("Cosa non è corretto? Es. ora è a pagamento dal lunedì al sabato, 8–20.")),
         "gone" to (t("Non esiste più") to t("Es. il parcheggio è stato chiuso per lavori / trasformato in area pedonale.")),
@@ -305,7 +345,7 @@ fun ReportScreen(nav: Nav) {
                         }
                         val body = listOf(
                             types[type]!!.first + " " + t("(segnalato con l'app ParkMap)"), "", text.trim(),
-                            c.osmRef?.let { "\n" + t("Elemento:") + " https://www.openstreetmap.org/$it" } ?: "", "#ParkMap",
+                            c.osmRef?.let { "\n" + t("Elemento:") + " https://www.openstreetmap.org/$it" } ?: "", if (c.ztl) "#ParkMap #ZTL" else "#ParkMap",
                         ).joinToString("\n")
                         sending = true; result = true to t("Invio in corso…")
                         scope.launch {

@@ -14,7 +14,7 @@ object AppSettings {
     enum class Palette(val label: String) { BRAND("ParkMap"), DYNAMIC("Dallo sfondo") }
     enum class NavApp(val label: String) { GOOGLE("Google Maps"), WAZE("Waze"), SYSTEM("Predefinita") }
 
-    private val defaultLayers = setOf(Layer.AREAS, Layer.SPACES, Layer.METERS, Layer.CHARGING, Layer.MOTO)
+    private val defaultLayers = setOf(Layer.AREAS, Layer.SPACES, Layer.METERS, Layer.CHARGING, Layer.MOTO, Layer.ZTL)
 
     private lateinit var prefs: SharedPreferences
 
@@ -44,6 +44,11 @@ object AppSettings {
         _showAccuracy.value = prefs.getBoolean("show_accuracy", true)
         _layers.value = prefs.getStringSet("layers", null)
             ?.mapNotNull { n -> runCatching { enumValueOf<Layer>(n) }.getOrNull() }?.toSet() ?: defaultLayers
+        // Il livello ZTL è arrivato dopo: chi aveva già scelto i livelli lo trova acceso una volta
+        if (!prefs.getBoolean("layer_ztl_added", false)) {
+            prefs.edit().putBoolean("layer_ztl_added", true).apply()
+            if (prefs.contains("layers")) setLayer(Layer.ZTL, true)
+        }
     }
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E) =

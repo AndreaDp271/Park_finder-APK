@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.AddLocationAlt
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -108,6 +109,8 @@ import io.github.andreadp271.parkmap.data.ParkingRepo
 import io.github.andreadp271.parkmap.data.RecentSearch
 import io.github.andreadp271.parkmap.data.SearchOutcome
 import io.github.andreadp271.parkmap.data.SearchResult
+import io.github.andreadp271.parkmap.data.Ztl
+import io.github.andreadp271.parkmap.data.ZtlRepo
 import io.github.andreadp271.parkmap.data.distanceM
 import io.github.andreadp271.parkmap.data.t
 import kotlinx.coroutines.Dispatchers
@@ -135,6 +138,7 @@ object MapHolder {
     var owner: Context? = null
     lateinit var parking: ParkingOverlay
     lateinit var markers: MarkersOverlay
+    lateinit var ztl: ZtlOverlay
     var labels: TilesOverlay? = null
     var appliedStyle: String? = null
     var started = false
@@ -165,11 +169,13 @@ object MapHolder {
         }
         parking = ParkingOverlay(ctx)
         markers = MarkersOverlay(ctx)
+        ztl = ZtlOverlay(ctx)
         // La rilevazione della pressione prolungata sta in fondo: i tocchi li gestiscono prima i livelli sopra
         map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint?) = false
             override fun longPressHelper(p: GeoPoint?): Boolean { p?.let { longPress.value = LatLon(it.latitude, it.longitude) }; return p != null }
         }))
+        map.overlays.add(ztl)
         map.overlays.add(parking)
         map.overlays.add(markers)
         map.addMapListener(object : MapListener {
@@ -223,7 +229,9 @@ object MapHolder {
         UiState.mapCenter.value = LatLon(c.latitude, c.longitude)
         UiState.mapZoom.value = z
         if (settled) AppSettings.lastView = Triple(c.latitude, c.longitude, z)
-        ParkingRepo.onViewChanged(BBox(bb.latSouth, bb.lonWest, bb.latNorth, bb.lonEast), LatLon(c.latitude, c.longitude), z)
+        val box = BBox(bb.latSouth, bb.lonWest, bb.latNorth, bb.lonEast)
+        ParkingRepo.onViewChanged(box, LatLon(c.latitude, c.longitude), z)
+        ZtlRepo.onViewChanged(box, z)
     }
 
     /**
@@ -262,6 +270,7 @@ fun MapScreen(nav: Nav) {
     val centerEmpty by ParkingRepo.centerEmpty.collectAsState()
     val recents by Library.recents.collectAsState()
     val sharedCar by UiState.sharedCar.collectAsState()
+    val zones by ZtlRepo.zones.collectAsState()
     val longPress = MapHolder.longPress.value
     val dark = isDark()
     val now = rememberNow(30_000)
@@ -273,6 +282,7 @@ fun MapScreen(nav: Nav) {
     var layersOpen by remember { mutableStateOf(false) }
     var legendOpen by remember { mutableStateOf(false) }
     var sharedOpen by remember { mutableStateOf(false) }
+    var ztlOpen by remember { mutableStateOf<Ztl?>(null) }
 
     // ─── Stile, livelli, marker ───
     LaunchedEffect(style) {
@@ -289,6 +299,13 @@ fun MapScreen(nav: Nav) {
             MapHolder.parking.prepare(list)
         }
         MapHolder.parking.setPrepared(shown)
+        map.invalidate()
+    }
+
+    LaunchedEffect(zones, layers, now / 60_000) {
+        val cal = Calendar.getInstance()
+        MapHolder.ztl.inactive = zones.filter { it.activeAt(cal) == false }.map { it.id }.toSet()
+        MapHolder.ztl.zones = if (Layer.ZTL in layers) zones else emptyList()
         map.invalidate()
     }
 
@@ -309,10 +326,11 @@ fun MapScreen(nav: Nav) {
 
     DisposableEffect(Unit) {
         MapHolder.parking.onTap = { el -> UiState.selected.value = el }
+        MapHolder.ztl.onTap = { ztlOpen = it }
         MapHolder.markers.onCarTap = { nav.tab("auto") }
         MapHolder.markers.onSharedCarTap = { sharedOpen = true }
         MapHolder.markers.onDestTap = { nav.tab("vicini") }
-        onDispose { MapHolder.parking.onTap = null; MapHolder.markers.onCarTap = null; MapHolder.markers.onSharedCarTap = null; MapHolder.markers.onDestTap = null }
+        onDispose { MapHolder.parking.onTap = null; MapHolder.ztl.onTap = null; MapHolder.markers.onCarTap = null; MapHolder.markers.onSharedCarTap = null; MapHolder.markers.onDestTap = null }
     }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -340,15 +358,18 @@ fun MapScreen(nav: Nav) {
         if (!LocationTracker.hasPermission(ctx)) { MapHolder.centerOnNextFix = true; permLauncher.launch(locationPerms); return }
         LocationTracker.start(ctx)
         val f = UiState.fix.value
-        if (f != null && System.currentTimeMillis() - f.ts < 30_000) centerOn(f.lat, f.lon, max(map.zoomLevelDouble, 17.0))
-        else { MapHolder.centerOnNextFix = true; UiState.say(t("Cerco la tua posizione...")) }
+        // Si centra subito su quello che c'è; se è una posizione vecchia, il prossimo rilevamento ricentra
+        if (f != null) centerOn(f.lat, f.lon, max(map.zoomLevelDouble, 17.0))
+        if (f == null || f.stale) { MapHolder.centerOnNextFix = true; UiState.say(t("Cerco la tua posizione...")) }
     }
 
     LaunchedEffect(fix) {
         val f = fix ?: return@LaunchedEffect
         if (MapHolder.centerOnNextFix) {
-            MapHolder.centerOnNextFix = false
             centerOn(f.lat, f.lon, max(map.zoomLevelDouble, 17.0))
+            // Ultima posizione nota: la mappa va già lì, ma si aspetta il rilevamento nuovo per centrare bene
+            if (f.stale) return@LaunchedEffect
+            MapHolder.centerOnNextFix = false
             UiState.say(t("Posizione trovata"))
         }
     }
@@ -477,7 +498,8 @@ fun MapScreen(nav: Nav) {
                     }
                 }
             }
-            FilterBar(car, now, dest, filters, fix)
+            val destZtl = remember(dest, zones, layers) { if (Layer.ZTL in layers) dest?.let { ZtlRepo.atOrNear(it.lat, it.lon, 40.0) } else null }
+            FilterBar(car, now, dest, destZtl, filters, fix) { ztlOpen = it }
         }
 
         // Pulsanti sul lato destro
@@ -498,7 +520,7 @@ fun MapScreen(nav: Nav) {
         }
 
         // Messaggio di stato e attribuzione
-        Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 6.dp, start = 12.dp, end = 76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 6.dp, start = 76.dp, end = 76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val text = status ?: if (centerEmpty) t("Caricamento parcheggi...") else null
             if (text != null) {
                 Surface(shape = RoundedCornerShape(30.dp), color = Color(0xE60F172A), contentColor = Color.White, shadowElevation = 8.dp) {
@@ -530,6 +552,17 @@ fun MapScreen(nav: Nav) {
         }
     }
 
+    ztlOpen?.let { z ->
+        ModalBottomSheet(onDismissRequest = { ztlOpen = null }, sheetState = rememberModalBottomSheetState()) {
+            ZtlCard(z) {
+                ztlOpen = null
+                val c = z.center
+                UiState.report.value = ReportContext(c.lat, c.lon, z.id.replace(':', '/'), z.name.ifEmpty { "ZTL" }, "wrong", ztl = true)
+                nav.go("segnala")
+            }
+        }
+    }
+
     if (legendOpen) ModalBottomSheet(onDismissRequest = { legendOpen = false }, sheetState = rememberModalBottomSheetState()) { LegendSheet() }
     if (layersOpen) ModalBottomSheet(onDismissRequest = { layersOpen = false }, sheetState = rememberModalBottomSheetState()) { LayersSheet(style, layers) }
 
@@ -554,6 +587,10 @@ fun MapScreen(nav: Nav) {
                 ContextAction(Icons.Filled.AddLocationAlt, t("Segnala parcheggio mancante")) {
                     MapHolder.longPress.value = null
                     UiState.report.value = ReportContext(p.lat, p.lon, null, null, "missing"); nav.go("segnala")
+                }
+                ContextAction(Icons.Filled.Block, t("Segnala ZTL mancante")) {
+                    MapHolder.longPress.value = null
+                    UiState.report.value = ReportContext(p.lat, p.lon, null, null, "missing", ztl = true); nav.go("segnala")
                 }
                 ContextAction(Icons.Filled.Navigation, t("Naviga fin qui")) { MapHolder.longPress.value = null; navigateTo(ctx, p.lat, p.lon) }
             }
@@ -624,7 +661,7 @@ private fun SearchPill(query: String, onQuery: (String) -> Unit, onFocus: (Boole
 /** Chip sotto la ricerca: auto, destinazione, azzera e i filtri. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FilterBar(car: io.github.andreadp271.parkmap.data.Car?, now: Long, dest: Destination?, filters: Set<Filter>, fix: Fix?) {
+private fun FilterBar(car: io.github.andreadp271.parkmap.data.Car?, now: Long, dest: Destination?, destZtl: Ztl?, filters: Set<Filter>, fix: Fix?, onZtl: (Ztl) -> Unit) {
     val surface = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
     LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (car != null) item("car") {
@@ -653,6 +690,17 @@ private fun FilterBar(car: io.github.andreadp271.parkmap.data.Car?, now: Long, d
                 leadingIcon = { Icon(Icons.Filled.Flag, null, Modifier.size(18.dp), tint = Color(0xFFBE123C)) },
                 trailingIcon = { Icon(Icons.Filled.Close, t("Chiudi"), Modifier.size(18.dp).clickable { UiState.destination.value = null }) },
                 colors = AssistChipDefaults.assistChipColors(containerColor = surface),
+                elevation = AssistChipDefaults.assistChipElevation(elevation = 3.dp),
+            )
+        }
+        if (destZtl != null) item("ztl") {
+            val on = destZtl.activeAt(Calendar.getInstance()) != false
+            val red = if (on) Color(0xFFDC2626) else Color(0xFF16A34A)
+            AssistChip(
+                onClick = { onZtl(destZtl) }, label = { Text(if (on) t("Destinazione in ZTL") else t("Destinazione in ZTL (non attiva)"), fontWeight = FontWeight.SemiBold) },
+                leadingIcon = { Icon(iconFor(if (on) "lock" else "lock-open"), null, Modifier.size(18.dp), tint = red) },
+                colors = AssistChipDefaults.assistChipColors(containerColor = surface, labelColor = red),
+                border = BorderStroke(1.dp, red.copy(alpha = 0.5f)),
                 elevation = AssistChipDefaults.assistChipElevation(elevation = 3.dp),
             )
         }
@@ -698,8 +746,11 @@ private fun LayersSheet(style: String, layers: Set<Layer>) {
             Layer.entries.forEachIndexed { i, l ->
                 if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 Row(Modifier.fillMaxWidth().clickable { AppSettings.setLayer(l, l !in layers) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(16.dp).clip(if (l == Layer.AREAS || l == Layer.SPACES) RoundedCornerShape(4.dp) else CircleShape).background(layerColor(l)))
-                    Text(t(l.label), Modifier.weight(1f).padding(start = 14.dp))
+                    Box(Modifier.size(16.dp).clip(if (l == Layer.AREAS || l == Layer.SPACES || l == Layer.ZTL) RoundedCornerShape(4.dp) else CircleShape).background(layerColor(l)))
+                    Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                        Text(t(l.label))
+                        if (l == Layer.ZTL) Muted(t("Solo quelle mappate su OpenStreetMap"))
+                    }
                     Switch(checked = l in layers, onCheckedChange = { AppSettings.setLayer(l, it) })
                 }
             }
@@ -710,4 +761,5 @@ private fun LayersSheet(style: String, layers: Set<Layer>) {
 private fun layerColor(l: Layer) = when (l) {
     Layer.AREAS -> Color(0xFF60A5FA); Layer.SPACES -> Color(0xFFFDE047); Layer.METERS -> Color(0xFFF97316)
     Layer.CHARGING -> Color(0xFF059669); Layer.MOTO -> Color(0xFFFCA5A5); Layer.BIKES -> Color(0xFFBEF264)
+    Layer.ZTL -> Color(0xFFDC2626)
 }

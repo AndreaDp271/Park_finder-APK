@@ -49,6 +49,8 @@ import io.github.andreadp271.parkmap.data.Chip
 import io.github.andreadp271.parkmap.data.Describe
 import io.github.andreadp271.parkmap.data.Library
 import io.github.andreadp271.parkmap.data.OsmElement
+import io.github.andreadp271.parkmap.data.Ztl
+import io.github.andreadp271.parkmap.data.ZtlRepo
 import io.github.andreadp271.parkmap.data.distanceM
 import io.github.andreadp271.parkmap.data.t
 
@@ -106,6 +108,10 @@ fun ElementCard(el: OsmElement, onReport: () -> Unit) {
                 }
             }
         }
+
+        val zones by ZtlRepo.zones.collectAsState()
+        val ztl = remember(el, zones) { anchor?.let { ZtlRepo.atOrNear(it.lat, it.lon, 30.0) } }
+        if (ztl != null) ZtlWarning(ztl, dark)
 
         if (d.costEstimator) CostEstimator(el)
 
@@ -179,6 +185,95 @@ private fun CostEstimator(el: OsmElement) {
                 }
                 r.notes.forEach { Muted(it) }
             }
+        }
+    }
+}
+
+private val ZTL_RED = Color(0xFFDC2626)
+private val ZTL_GREEN = Color(0xFF16A34A)
+
+/** (sfondo, testo) per ZTL attiva (rosso) o non attiva (verde). */
+private fun ztlTones(on: Boolean, dark: Boolean): Pair<Color, Color> = when {
+    on && dark -> Color(0xFF4C1515) to Color(0xFFFCA5A5)
+    on -> Color(0xFFFEE2E2) to Color(0xFFB91C1C)
+    dark -> Color(0xFF123A22) to Color(0xFF86EFAC)
+    else -> Color(0xFFDCFCE7) to Color(0xFF166534)
+}
+
+/** Avviso sulla scheda di un parcheggio che sta dentro una ZTL. */
+@Composable
+private fun ZtlWarning(z: Ztl, dark: Boolean) {
+    val on = remember(z) { z.activeAt(java.util.Calendar.getInstance()) } != false
+    val (bg, fg) = ztlTones(on, dark)
+    Surface(shape = RoundedCornerShape(16.dp), color = bg) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(iconFor("lock"), null, tint = fg, modifier = Modifier.size(20.dp))
+            Column(Modifier.padding(start = 10.dp)) {
+                Text(
+                    when {
+                        z.street -> t("Su una strada a traffico limitato")
+                        z.name.isNotEmpty() -> t("Dentro la ZTL «{name}»", "name" to z.name)
+                        else -> t("Dentro una ZTL")
+                    },
+                    fontWeight = FontWeight.SemiBold, color = fg,
+                )
+                Text(
+                    if (on) t("Per arrivarci in auto può servire il permesso: controlla orari e cartelli.")
+                    else t("Adesso non è attiva secondo OpenStreetMap: controlla comunque i cartelli."),
+                    style = MaterialTheme.typography.bodySmall, color = fg,
+                )
+            }
+        }
+    }
+}
+
+/** Scheda di una ZTL toccata sulla mappa: nome, regole di accesso dai tag OSM, sito del Comune. */
+@Composable
+fun ZtlCard(z: Ztl, onReport: () -> Unit) {
+    val ctx = LocalContext.current
+    val rules = remember(z) { z.rules() }
+    val state = remember(z) { z.activeAt(java.util.Calendar.getInstance()) }
+    val dark = isDark()
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(if (state == false) ZTL_GREEN else ZTL_RED), contentAlignment = Alignment.Center) {
+                Text("ZTL", color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+            }
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text(z.name.ifEmpty { if (z.area) t("Zona a traffico limitato") else t("Strada a traffico limitato") }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (z.name.isNotEmpty()) Muted(if (z.area) t("Zona a traffico limitato") else t("Strada a traffico limitato"))
+            }
+        }
+        run {
+            val (bg, fg) = if (state == null) ChipTones.colors("", dark) else ztlTones(state, dark)
+            Surface(shape = CircleShape, color = bg) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(iconFor(if (state == false) "lock-open" else "lock"), null, tint = fg, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(
+                        when (state) { true -> t("Attiva adesso"); false -> t("Non attiva adesso"); null -> t("Orari non indicati: considerala attiva") },
+                        color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+        if (rules.isNotEmpty()) Panel(padding = 0.dp) {
+            rules.forEachIndexed { i, (who, rule) ->
+                if (i > 0) androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text(t(who), Modifier.weight(0.38f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(rule.replaceFirstChar { it.uppercase() }, Modifier.weight(0.62f), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        } else Muted(t("Orari e permessi non sono indicati su OpenStreetMap."))
+        z.tags["description"]?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        Muted(t("Dati da OpenStreetMap, possono essere incompleti: fanno fede i cartelli all'ingresso della zona."))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            (z.tags["website"] ?: z.tags["source:url"])?.let { url ->
+                Button(onClick = { openUrl(ctx, url) }, modifier = Modifier.weight(1f).height(48.dp)) { Text(t("Sito del Comune")) }
+            }
+            FilledTonalIconButton(onClick = { openUrl(ctx, "https://www.openstreetmap.org/" + z.id.replace(':', '/')) }) { Icon(Icons.Filled.Edit, t("Modifica su OpenStreetMap")) }
+            FilledTonalIconButton(onClick = onReport) { Icon(Icons.Filled.Flag, t("Segnala un errore")) }
         }
     }
 }

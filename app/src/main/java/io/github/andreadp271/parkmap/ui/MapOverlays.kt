@@ -13,6 +13,8 @@ import io.github.andreadp271.parkmap.data.Kind
 import io.github.andreadp271.parkmap.data.LatLon
 import io.github.andreadp271.parkmap.data.OsmElement
 import io.github.andreadp271.parkmap.data.OsmRules
+import io.github.andreadp271.parkmap.data.Ztl
+import io.github.andreadp271.parkmap.data.ZtlRepo
 import io.github.andreadp271.parkmap.data.distanceM
 import io.github.andreadp271.parkmap.data.distanceToSegmentM
 import org.osmdroid.util.GeoPoint
@@ -213,6 +215,69 @@ class ParkingOverlay(private val ctx: Context) : Overlay() {
             j = i
         }
         return c
+    }
+}
+
+/**
+ * ZTL sotto i parcheggi: area rossa trasparente con bordo tratteggiato (le ZTL mappate come strada, solo il tratto).
+ * Il tocco arriva qui solo se nessun parcheggio sopra l'ha preso.
+ */
+class ZtlOverlay(ctx: Context) : Overlay() {
+    private val density = ctx.resources.displayMetrics.density
+    @Volatile var zones: List<Ztl> = emptyList()
+    /** Id delle ZTL non attive adesso (verdi); tutte le altre sono rosse. */
+    @Volatile var inactive: Set<String> = emptySet()
+    var onTap: ((Ztl) -> Unit)? = null
+
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x26DC2626 }
+    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; color = 0xCCDC2626.toInt(); strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND
+        strokeWidth = 2.5f * density; pathEffect = DashPathEffect(floatArrayOf(8 * density, 5 * density), 0f)
+    }
+    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; color = 0x99DC2626.toInt(); strokeJoin = Paint.Join.ROUND; strokeCap = Paint.Cap.ROUND; strokeWidth = 6f * density
+    }
+    private val path = Path()
+    private val pt = Point()
+    private val geo = GeoPoint(0.0, 0.0)
+
+    override fun draw(c: Canvas, pj: Projection) {
+        val list = zones
+        if (list.isEmpty() || pj.zoomLevel < ZtlRepo.MIN_ZOOM) return
+        for (z in list) {
+            path.reset()
+            z.rings.forEach { g ->
+                for (i in 0 until g.size / 2) {
+                    geo.setCoords(g[2 * i], g[2 * i + 1])
+                    pj.toPixels(geo, pt)
+                    if (i == 0) path.moveTo(pt.x.toFloat(), pt.y.toFloat()) else path.lineTo(pt.x.toFloat(), pt.y.toFloat())
+                }
+                if (z.area) path.close()
+            }
+            val on = z.id !in inactive
+            fillPaint.color = if (on) 0x26DC2626 else 0x2616A34A
+            strokePaint.color = if (on) 0xCCDC2626.toInt() else 0xCC16A34A.toInt()
+            linePaint.color = if (on) 0x99DC2626.toInt() else 0x9916A34A.toInt()
+            if (z.area) {
+                path.fillType = Path.FillType.EVEN_ODD
+                c.drawPath(path, fillPaint)
+                c.drawPath(path, strokePaint)
+            } else c.drawPath(path, linePaint)
+        }
+    }
+
+    override fun onSingleTapConfirmed(e: MotionEvent, map: MapView): Boolean {
+        val list = zones
+        if (list.isEmpty() || map.zoomLevelDouble < ZtlRepo.MIN_ZOOM) return false
+        val p = map.projection.fromPixels(e.x.toInt(), e.y.toInt())
+        val tap = LatLon(p.latitude, p.longitude)
+        val tolM = 14 * density * metersPerPixel(tap.lat, map.zoomLevelDouble)
+        // prima la strada sotto il dito (sta sopra le zone), poi la zona
+        val hit = list.filter { !it.area }.map { it to it.distanceM(tap) }.filter { it.second < tolM }.minByOrNull { it.second }?.first
+            ?: ZtlRepo.at(tap.lat, tap.lon, list)
+            ?: return false
+        onTap?.invoke(hit)
+        return true
     }
 }
 

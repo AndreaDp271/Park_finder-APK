@@ -8,16 +8,20 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.Build
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import io.github.andreadp271.parkmap.data.Filter
 import io.github.andreadp271.parkmap.data.LatLon
 import io.github.andreadp271.parkmap.data.OsmElement
 import kotlinx.coroutines.flow.MutableStateFlow
 
-/** Posizione dell'utente: coordinate, precisione in metri e ora del rilevamento. */
+/** Posizione dell'utente: coordinate, precisione in metri e ora del rilevamento (vera, anche per l'ultima posizione nota). */
 class Fix(val lat: Double, val lon: Double, val acc: Float, val ts: Long) {
     val latLon get() = LatLon(lat, lon)
+    /** Rilevamento di più di un minuto fa (ultima posizione nota): va bene per centrare subito, poi si aspetta quello nuovo. */
+    val stale get() = System.currentTimeMillis() - ts > 60_000
 }
 
 /** Destinazione cercata (o punto scelto): i parcheggi si ordinano per distanza a piedi da qui. */
@@ -27,7 +31,7 @@ class Destination(val lat: Double, val lon: Double, val name: String)
 class Focus(val lat: Double, val lon: Double, val zoom: Double? = null, val openKey: String? = null)
 
 /** Contesto di una segnalazione su OpenStreetMap. */
-class ReportContext(val lat: Double, val lon: Double, val osmRef: String?, val title: String?, val type: String)
+class ReportContext(val lat: Double, val lon: Double, val osmRef: String?, val title: String?, val type: String, val ztl: Boolean = false)
 
 /** Stato condiviso tra le schermate (mappa, elenco, auto, menu). */
 object UiState {
@@ -55,7 +59,7 @@ object UiState {
     fun say(message: String) { status.value = message }
 }
 
-/** GPS senza servizi Google: LocationManager, rilevamenti filtrati come nella web app. */
+/** Posizione senza la libreria dei servizi Google: LocationManager (fused, GPS e rete), rilevamenti filtrati come nella web app. */
 object LocationTracker {
     private var manager: LocationManager? = null
     private var running = false
@@ -73,10 +77,14 @@ object LocationTracker {
 
     private fun accept(loc: Location) {
         val acc = if (loc.hasAccuracy()) loc.accuracy else 0f
+        // Ora vera del rilevamento: l'ultima posizione nota può essere di qualche minuto fa
+        val ageMs = (SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000
+        val ts = System.currentTimeMillis() - ageMs.coerceAtLeast(0)
         val last = UiState.fix.value
+        if (last != null && ts < last.ts) return
         // Un fix approssimativo arrivato dopo uno più preciso non deve peggiorare il pallino
-        if (last != null && acc > last.acc * 2 && System.currentTimeMillis() - last.ts < 15_000) return
-        UiState.fix.value = Fix(loc.latitude, loc.longitude, acc, System.currentTimeMillis())
+        if (last != null && acc > last.acc * 2 && ts - last.ts < 15_000) return
+        UiState.fix.value = Fix(loc.latitude, loc.longitude, acc, ts)
     }
 
     @SuppressLint("MissingPermission")
@@ -85,14 +93,19 @@ object LocationTracker {
         val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
         manager = lm
         running = true
-        // Fix rapido (anche approssimativo o di qualche minuto fa) per centrare subito la mappa
-        listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER).forEach { p ->
-            runCatching { lm.getLastKnownLocation(p) }.getOrNull()
-                ?.takeIf { System.currentTimeMillis() - it.time < 5 * 60_000 }?.let { accept(it) }
+        val providers = buildList {
+            // fused (Android 12+): Wi-Fi, celle e GPS insieme, la prima posizione arriva in un paio di secondi anche al chiuso
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(LocationManager.FUSED_PROVIDER)
+            add(LocationManager.GPS_PROVIDER); add(LocationManager.NETWORK_PROVIDER)
         }
-        // Il GPS affina e tiene il pallino aggiornato mentre ci si sposta; la rete dà una prima posizione subito
-        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).forEach { p ->
-            runCatching { if (lm.isProviderEnabled(p)) lm.requestLocationUpdates(p, 2000L, 3f, listener, Looper.getMainLooper()) }
+        // Ultima posizione nota (fino a 30 minuti fa) per centrare subito la mappa: la più recente tra i provider
+        providers.mapNotNull { p -> runCatching { lm.getLastKnownLocation(p) }.getOrNull() }
+            .filter { SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos < 30 * 60_000_000_000L }
+            .sortedBy { it.elapsedRealtimeNanos }
+            .forEach { accept(it) }
+        // A tempo (ogni 2 s) e non a distanza: anche da fermi la posizione resta fresca, così "La mia posizione" centra subito
+        providers.forEach { p ->
+            runCatching { if (lm.isProviderEnabled(p)) lm.requestLocationUpdates(p, 2000L, 0f, listener, Looper.getMainLooper()) }
         }
     }
 
