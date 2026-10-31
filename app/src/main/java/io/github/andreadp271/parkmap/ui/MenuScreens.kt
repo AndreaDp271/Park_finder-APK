@@ -60,6 +60,7 @@ import io.github.andreadp271.parkmap.data.LatLon
 import io.github.andreadp271.parkmap.data.OsmNotes
 import io.github.andreadp271.parkmap.data.ParkingRepo
 import io.github.andreadp271.parkmap.data.ProviderState
+import io.github.andreadp271.parkmap.data.ZtlRepo
 import io.github.andreadp271.parkmap.data.t
 import kotlinx.coroutines.launch
 
@@ -245,7 +246,8 @@ fun ProvidersScreen(nav: Nav) {
                             Button(onClick = {
                                 packProgress = 0 to maxOf(1, ParkingRepo.packCells())
                                 scope.launch {
-                                    val failed = ParkingRepo.downloadPack { d, total -> packProgress = d to total }
+                                    var failed = ParkingRepo.downloadPack { d, total -> packProgress = d to total }
+                                    ParkingRepo.PACK_COUNTRIES.forEach { c -> failed += ZtlRepo.downloadCountry(c) { d, total -> packProgress = d to total } }
                                     packProgress = null; pack = ParkingRepo.offlinePack()
                                     UiState.say(if (failed > 0) t("Alcuni file non sono stati scaricati: riprova da Menu › Stato provider.") else t("Fatto"))
                                 }

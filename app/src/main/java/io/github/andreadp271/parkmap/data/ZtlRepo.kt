@@ -35,6 +35,13 @@ import kotlin.math.floor
 class Ztl(val id: String, val tags: Map<String, String>, val rings: List<DoubleArray>, val area: Boolean, val street: Boolean = false) {
     val name: String get() = tags["name"] ?: tags["official_name"] ?: tags["alt_name"] ?: ""
 
+    /** Riquadro (sud, ovest, nord, est). */
+    val box: DoubleArray by lazy(LazyThreadSafetyMode.NONE) {
+        var s = 90.0; var n = -90.0; var w = 180.0; var e = -180.0
+        rings.forEach { g -> for (i in 0 until g.size / 2) { s = minOf(s, g[2 * i]); n = maxOf(n, g[2 * i]); w = minOf(w, g[2 * i + 1]); e = maxOf(e, g[2 * i + 1]) } }
+        doubleArrayOf(s, w, n, e)
+    }
+
     /** Ingombro approssimato (gradi²): tra zone una dentro l'altra vince la più piccola. */
     val size: Double by lazy(LazyThreadSafetyMode.NONE) {
         var s = 90.0; var n = -90.0; var w = 180.0; var e = -180.0
@@ -196,7 +203,9 @@ object ZtlRepo {
 
     fun init(ctx: Context) {
         if (::dir.isInitialized) return
-        dir = File(ctx.cacheDir, "ztl").apply { mkdirs() }
+        // filesDir e non cache: le ZTL scaricate in anticipo (setup, pacchetto offline) servono anche senza rete
+        dir = File(ctx.filesDir, "ztl").apply { mkdirs() }
+        File(ctx.cacheDir, "ztl").deleteRecursively()
     }
 
     /** ZTL che contiene il punto, tra quelle caricate (la più piccola, se sono una dentro l'altra). */
@@ -242,28 +251,94 @@ object ZtlRepo {
         fileOf(key).takeIf { it.exists() }?.let { json.decodeFromString<ZtlCell>(it.readText()) }?.takeIf { it.v == CELL_VERSION }
     }.getOrNull()
 
-    private fun fetch(key: String) {
-        inflight += key
-        val (i, j) = key.split('_').map { it.toInt() }
-        val s = i * CELL_DEG; val w = j * CELL_DEG
-        // Zone ZTL e, dove la ZTL è mappata strada per strada, le strade con accesso solo con permesso o vietato a certe ore
+    /** Zone ZTL e, dove la ZTL è mappata strada per strada, le strade con accesso solo con permesso o vietato a certe ore. */
+    private suspend fun query(s: Double, w: Double, n: Double, e: Double, timeoutMs: Long): List<Ztl> = withContext(Dispatchers.IO) {
         val streetCond = Ztl.STREET_KEYS.joinToString(" OR ") { k -> "tags->>'$k' = 'permit' OR tags->>'$k:conditional' ~ '^\\s*(permit|no)\\s*@'" }
         val sql = "SELECT osm_type, osm_id, tags, geom FROM postpass_pointlinepolygon WHERE (tags->>'boundary' = 'limited_traffic_zone' OR " +
             "(tags ? 'highway' AND tags->>'highway' NOT IN ($SKIP_HIGHWAYS) AND ($streetCond))) " +
-            "AND geom && ST_MakeEnvelope($w,$s,${w + CELL_DEG},${s + CELL_DEG},4326)"
-        scope.launch {
-            try {
-                val cell = withContext(Dispatchers.IO) {
-                    val text = withTimeout(20_000) {
-                        val req = okhttp3.Request.Builder().url(POSTPASS_URL).post(FormBody.Builder().add("data", sql).build()).build()
-                        Http.client.fetchText(req)
-                    }
-                    ZtlCell(System.currentTimeMillis(), parse(text), CELL_VERSION).also { c ->
-                        runCatching { fileOf(key).writeText(json.encodeToString(ZtlCell.serializer(), c)) }
+            "AND geom && ST_MakeEnvelope($w,$s,$e,$n,4326)"
+        val text = withTimeout(timeoutMs) {
+            val req = okhttp3.Request.Builder().url(POSTPASS_URL).post(FormBody.Builder().add("data", sql).build()).build()
+            Http.client.fetchText(req)
+        }
+        parse(text)
+    }
+
+    /** Salva una cella su disco e in memoria (da chiamare sul thread principale). */
+    private suspend fun store(key: String, list: List<Ztl>) {
+        val cell = ZtlCell(System.currentTimeMillis(), list, CELL_VERSION)
+        withContext(Dispatchers.IO) { runCatching { fileOf(key).writeText(json.encodeToString(ZtlCell.serializer(), cell)) } }
+        cells[key] = cell
+        failedAt -= key
+    }
+
+    private fun isFresh(key: String) = (cells[key] ?: readFromDisk(key)?.also { cells[key] = it })?.let { System.currentTimeMillis() - it.ts < FRESH_MS } == true
+
+    /** Scarica in anticipo le ZTL attorno a un punto (setup iniziale: la città scelta). */
+    suspend fun prefetch(center: LatLon, radiusDeg: Double = 0.1) {
+        if (!::dir.isInitialized) return
+        val keys = LinkedHashSet<String>()
+        for (dl in listOf(-radiusDeg, radiusDeg)) for (dw in listOf(-radiusDeg, radiusDeg)) keys += cellOf(center.lat + dl, center.lon + dw)
+        keys.filter { !isFresh(it) && it !in inflight }.forEach { key ->
+            val (i, j) = key.split('_').map { it.toInt() }
+            runCatching { store(key, query(i * CELL_DEG, j * CELL_DEG, (i + 1) * CELL_DEG, (j + 1) * CELL_DEG, 30_000)) }
+        }
+        publish()
+    }
+
+    /** Area delle nazioni con il pacchetto offline (vedi [ParkingRepo.PACK_COUNTRIES]). */
+    private val PACK_AREAS = mapOf("IT" to BBox(35.0, 6.5, 47.5, 19.0))
+    private const val BLOCK_DEG = 2.0
+
+    /**
+     * Scarica le ZTL di tutta la nazione per usarle senza rete: a blocchi di 2° (poche richieste invece di centinaia di celle),
+     * poi divise nelle celle da 0,5° che usa la mappa. [onProgress] riceve (blocchi fatti, totali); restituisce i blocchi falliti.
+     */
+    suspend fun downloadCountry(code: String, onProgress: (Int, Int) -> Unit): Int {
+        val area = PACK_AREAS[code] ?: return 0
+        if (!::dir.isInitialized) return 0
+        val blocks = ArrayList<Pair<Int, Int>>()
+        for (bi in floor(area.south / BLOCK_DEG).toInt()..floor(area.north / BLOCK_DEG).toInt())
+            for (bj in floor(area.west / BLOCK_DEG).toInt()..floor(area.east / BLOCK_DEG).toInt()) blocks += bi to bj
+        val per = (BLOCK_DEG / CELL_DEG).toInt()
+        var done = 0; var failed = 0
+        onProgress(0, blocks.size)
+        val gate = kotlinx.coroutines.sync.Semaphore(3)
+        kotlinx.coroutines.coroutineScope {
+            blocks.forEach { (bi, bj) ->
+                launch {
+                    gate.acquire()
+                    try {
+                        val s = bi * BLOCK_DEG; val w = bj * BLOCK_DEG
+                        val keys = (0 until per).flatMap { di -> (0 until per).map { dj -> "${bi * per + di}_${bj * per + dj}" } }
+                        if (keys.all { isFresh(it) }) return@launch
+                        val list = query(s, w, s + BLOCK_DEG, w + BLOCK_DEG, 90_000)
+                        keys.forEach { key ->
+                            val (i, j) = key.split('_').map { it.toInt() }
+                            val cs = i * CELL_DEG; val cw = j * CELL_DEG
+                            store(key, list.filter { z -> z.box[0] <= cs + CELL_DEG && z.box[2] >= cs && z.box[1] <= cw + CELL_DEG && z.box[3] >= cw })
+                        }
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
+                        failed++
+                    } finally {
+                        gate.release()
+                        done++
+                        onProgress(done, blocks.size)
                     }
                 }
-                cells[key] = cell
-                failedAt -= key
+            }
+        }
+        publish()
+        return failed
+    }
+
+    private fun fetch(key: String) {
+        inflight += key
+        val (i, j) = key.split('_').map { it.toInt() }
+        scope.launch {
+            try {
+                store(key, query(i * CELL_DEG, j * CELL_DEG, (i + 1) * CELL_DEG, (j + 1) * CELL_DEG, 20_000))
                 publish()
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e

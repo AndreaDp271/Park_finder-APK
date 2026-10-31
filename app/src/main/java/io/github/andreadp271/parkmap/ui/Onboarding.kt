@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachMoney
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.EvStation
@@ -82,6 +83,7 @@ import io.github.andreadp271.parkmap.data.LatLon
 import io.github.andreadp271.parkmap.data.ParkingRepo
 import io.github.andreadp271.parkmap.data.SearchResult
 import io.github.andreadp271.parkmap.data.T
+import io.github.andreadp271.parkmap.data.ZtlRepo
 import io.github.andreadp271.parkmap.data.t
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -152,6 +154,7 @@ private fun WelcomePage() {
         Feature(Icons.Filled.Map, t("Parcheggi colorati per costo"), t("Vedi a colpo d'occhio dove si paga, dove è gratis e dove serve il disco orario."))
         Feature(Icons.Filled.AttachMoney, t("Costo stimato e orari"), t("Le tariffe e le fasce orarie di OpenStreetMap, con il costo per la durata che scegli."))
         Feature(Icons.Filled.EvStation, t("Ricarica, moto, bici, disabili"), t("Colonnine, stalli speciali e parcheggi per due ruote, con i filtri."))
+        Feature(Icons.Filled.Block, t("ZTL"), t("Zone e strade a traffico limitato, rosse se attive adesso e verdi se no, con un avviso se il parcheggio o la destinazione ci sono dentro."))
         Feature(Icons.Filled.DirectionsCar, t("La mia auto"), t("Salva dove hai parcheggiato e ricevi un promemoria prima che scada la sosta."))
         Feature(Icons.Filled.Public, t("Gratis, senza account"), t("Dati di OpenStreetMap, nessuna pubblicità, nessun servizio Google."))
     }
@@ -259,6 +262,7 @@ private fun AreaPage(onFinish: () -> Unit) {
     var picked by remember { mutableStateOf<Picked?>(null) }
     var progress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var packProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var ztlPhase by remember { mutableStateOf(false) }
     val staticInfo by ParkingRepo.staticInfo.collectAsState()
     var country by rememberSaveable { mutableStateOf(Locale.getDefault().country.takeIf { it in Locale.getISOCountries() }) }
     var pickCountry by remember { mutableStateOf(false) }
@@ -266,7 +270,9 @@ private fun AreaPage(onFinish: () -> Unit) {
     fun downloadPack() {
         packProgress = 0 to maxOf(1, ParkingRepo.packCells())
         scope.launch {
-            val failed = ParkingRepo.downloadPack { d, total -> packProgress = d to total }
+            var failed = ParkingRepo.downloadPack { d, total -> packProgress = d to total }
+            ztlPhase = true
+            failed += ZtlRepo.downloadCountry(country ?: "") { d, total -> packProgress = d to total }
             if (failed > 0) UiState.say(t("Alcuni file non sono stati scaricati: riprova da Menu › Stato provider."))
             onFinish()
         }
@@ -305,6 +311,8 @@ private fun AreaPage(onFinish: () -> Unit) {
         AppSettings.lastView = Triple(p.lat, p.lon, 15.0)
         scope.launch {
             ParkingRepo.prefetch(LatLon(p.lat, p.lon)) { d, total -> progress = d to total }
+            ztlPhase = true
+            ZtlRepo.prefetch(LatLon(p.lat, p.lon))
             onFinish()
         }
     }
@@ -334,8 +342,10 @@ private fun AreaPage(onFinish: () -> Unit) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(t("Dati precalcolati: {country}", "country" to countryName), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(t("Tutti i parcheggi precalcolati di OpenStreetMap, aggiornati ogni notte: circa {mb} MB.", "mb" to mb), style = MaterialTheme.typography.bodyMedium)
+                    Text(t("Comprese le ZTL, per vederle anche senza rete."), style = MaterialTheme.typography.bodyMedium)
                     val pp = packProgress
                     if (pp != null) {
+                        Text(if (ztlPhase) t("Scarico le ZTL…") else t("Scarico i parcheggi…"), style = MaterialTheme.typography.bodySmall)
                         LinearProgressIndicator(progress = { pp.first.toFloat() / pp.second }, modifier = Modifier.fillMaxWidth())
                         Text("${pp.first} / ${pp.second}", style = MaterialTheme.typography.bodySmall)
                     } else {
@@ -390,8 +400,13 @@ private fun AreaPage(onFinish: () -> Unit) {
             }
             val pr = progress
             if (pr != null) {
-                Text(t("Scarico i parcheggi di {name}…", "name" to p.name), textAlign = TextAlign.Start, fontSize = 14.sp)
-                LinearProgressIndicator(progress = { if (pr.second == 0) 0f else pr.first.toFloat() / pr.second }, modifier = Modifier.fillMaxWidth())
+                if (ztlPhase) {
+                    Text(t("Scarico le ZTL di {name}…", "name" to p.name), textAlign = TextAlign.Start, fontSize = 14.sp)
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else {
+                    Text(t("Scarico i parcheggi di {name}…", "name" to p.name), textAlign = TextAlign.Start, fontSize = 14.sp)
+                    LinearProgressIndicator(progress = { if (pr.second == 0) 0f else pr.first.toFloat() / pr.second }, modifier = Modifier.fillMaxWidth())
+                }
             } else {
                 Button(onClick = { download(p) }, modifier = Modifier.fillMaxWidth()) { Text(t("Scarica la zona e inizia")) }
             }
