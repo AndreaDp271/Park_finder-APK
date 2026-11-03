@@ -226,7 +226,7 @@ private fun PermissionsPage() {
             if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) else tick++
         }
         Text(
-            t("Facoltativo: il salvataggio automatico dell'auto via Bluetooth si attiva dalle Impostazioni."),
+            t("Facoltativo: il salvataggio automatico dell'auto via Bluetooth si attiva dalla scheda Auto."),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

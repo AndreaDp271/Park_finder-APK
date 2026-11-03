@@ -173,7 +173,7 @@ fun CarScreen(nav: Nav) {
                         ) { Icon(Icons.Filled.Place, null, Modifier.size(18.dp)); Text(t("Usa il centro della mappa"), Modifier.padding(start = 8.dp)) }
                     }
                 }
-                item { Muted(t("Puoi anche tenere premuto un punto della mappa e scegliere \"Ho parcheggiato qui\".") + " " + t("Oppure attiva nelle Impostazioni il salvataggio automatico via Bluetooth."), Modifier.padding(horizontal = 8.dp)) }
+                item { Muted(t("Puoi anche tenere premuto un punto della mappa e scegliere \"Ho parcheggiato qui\".") + " " + t("Oppure attiva qui sotto il salvataggio automatico via Bluetooth."), Modifier.padding(horizontal = 8.dp)) }
             } else {
                 val c = car!!
                 val dist = fix?.let { distanceM(it.lat, it.lon, c.lat, c.lon) }
@@ -265,6 +265,8 @@ fun CarScreen(nav: Nav) {
                     }
                 }
             }
+
+            item { BluetoothGroup() }
 
             if (history.isNotEmpty()) item {
                 val items = if (showAll) history else history.take(5)

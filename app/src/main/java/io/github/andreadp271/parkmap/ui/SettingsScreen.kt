@@ -175,8 +175,6 @@ fun SettingsScreen(nav: Nav) {
                 }, onClick = { AppSettings.setShowAccuracy(!showAccuracy) })
             }
 
-            BluetoothGroup()
-
             Group(t("Dati")) {
                 Item(
                     Icons.Filled.Dns, SetColors.data, t("Fonte in questa zona"),
@@ -272,7 +270,7 @@ private fun AppCard() {
 
 /** Auto via Bluetooth: scegli il dispositivo dell'auto e concedi i permessi per salvare la posizione con l'app chiusa. */
 @Composable
-private fun BluetoothGroup() {
+fun BluetoothGroup() {
     val ctx = LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
     var picker by remember { mutableStateOf<List<Triple<String, String, Boolean>>?>(null) }
