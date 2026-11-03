@@ -13,6 +13,7 @@ Per computer e iPhone c'è la [versione web](https://andreadp271.github.io/Park_
 - **Ricerca** di luoghi e indirizzi in tutto il mondo; scegliendo un indirizzo si apre l'elenco dei parcheggi ordinato per distanza a piedi
 - **Vicini e preferiti**, salvati solo sul telefono
 - **La mia auto**: posizione, nota, foto, promemoria 10 minuti prima della scadenza e alla scadenza, storico delle soste, navigazione a piedi, condivisione
+- **ZTL**: zone e strade a traffico limitato da OpenStreetMap, rosse se attive adesso e verdi se no, con avviso nei parcheggi e sulla destinazione
 - **Bluetooth dell'auto**: quando il telefono si scollega l'auto si salva da sola (anche con l'app chiusa), quando si ricollega la sosta finisce
 - Widget "La mia auto" e scorciatoie dell'icona (ho parcheggiato, la mia auto, parcheggi vicini)
 - Segnalazione di errori e parcheggi mancanti come note su OpenStreetMap
@@ -66,3 +67,7 @@ La firma usa i secret `KEYSTORE_BASE64` (il file `.p12` in base64), `KEYSTORE_PA
 | `assets/en.json` | dizionario inglese (le stesse chiavi italiane della web app) |
 
 Kotlin + Jetpack Compose, mappa con [osmdroid](https://github.com/osmdroid/osmdroid).
+
+## Licenza
+
+[GPL-3.0-or-later](LICENSE). Dati © OpenStreetMap contributors (ODbL).

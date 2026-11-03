@@ -1,0 +1,1 @@
+ParkMap è ora software libero (licenza GPL-3.0) e si prepara ad arrivare su F-Droid.

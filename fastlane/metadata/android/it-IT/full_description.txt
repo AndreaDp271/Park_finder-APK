@@ -3,6 +3,7 @@ ParkMap trova dove parcheggiare con i dati di OpenStreetMap: aree di sosta a pag
 • Mappa con filtri (gratis adesso, disco orario, disabili, ricarica EV, moto, bici) e stili Standard, Umanitario, Ciclabile, Rilievo, Grigio, Notte, Satellite
 • Orari di pagamento interpretati: "gratis adesso" e costo stimato per la durata che scegli
 • Cerca un indirizzo e vedi i parcheggi vicini con la distanza a piedi
+• ZTL: zone e strade a traffico limitato, rosse se attive adesso e verdi se no, con avviso se il parcheggio o la destinazione ci sono dentro
 • La mia auto: salva dove hai parcheggiato, con nota, foto, promemoria di scadenza, storico e navigazione a piedi per tornarci
 • Salvataggio automatico quando il telefono si scollega dal Bluetooth dell'auto
 • Widget "La mia auto" e scorciatoie dell'icona
