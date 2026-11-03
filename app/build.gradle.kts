@@ -22,8 +22,8 @@ android {
         applicationId = "io.github.andreadp271.parkmap"
         minSdk = 26
         targetSdk = 35
-        versionCode = 103
-        versionName = "2.1.2"
+        versionCode = 104
+        versionName = "2.1.3"
     }
 
     signingConfigs {

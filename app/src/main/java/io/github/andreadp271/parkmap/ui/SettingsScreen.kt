@@ -258,7 +258,11 @@ fun SettingsScreen(nav: Nav) {
 private fun AppCard() {
     Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF1D4ED8), Color(0xFF3B82F6))))) {
         Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.mipmap.ic_launcher_round), null, Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)))
+            // painterResource non legge le icone adattive (XML in mipmap-anydpi: crash): si sovrappongono i due livelli PNG
+            Box(Modifier.size(64.dp).clip(RoundedCornerShape(18.dp))) {
+                Image(painterResource(R.mipmap.ic_launcher_background), null, Modifier.fillMaxSize())
+                Image(painterResource(R.mipmap.ic_launcher_foreground), null, Modifier.fillMaxSize())
+            }
             Column(Modifier.padding(start = 16.dp)) {
                 Text("ParkMap", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Color.White)
                 Text(t("Versione {v}", "v" to BuildConfig.VERSION_NAME), color = Color.White.copy(alpha = 0.9f))
