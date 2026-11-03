@@ -1,1 +1,1 @@
-Limited traffic zones in the first setup too: downloading your city or all of Italy also saves the ZTLs, to see them offline.
+Limited traffic zones in the first setup too: downloading your city or all of Italy also saves the ZTLs, to see them offline. Automatic car saving over Bluetooth is now in the Car tab.

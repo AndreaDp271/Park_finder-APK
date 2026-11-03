@@ -1,1 +1,1 @@
-Le ZTL anche nel setup iniziale: scaricando la tua città o tutta l'Italia si salvano anche le ZTL, per vederle senza rete.
+Le ZTL anche nel setup iniziale: scaricando la tua città o tutta l'Italia si salvano anche le ZTL, per vederle senza rete. Il salvataggio automatico dell'auto via Bluetooth ora si attiva dalla scheda Auto.
