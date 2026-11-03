@@ -1,0 +1,39 @@
+AntiFeatures:
+  NonFreeNet:
+    it: Gli stili di mappa Satellite, Ibrida e Rilievo usano le tessere non libere di Esri
+      (server.arcgisonline.com).
+    en-US: The Satellite, Hybrid and Topographic map styles use non-free Esri tiles
+      (server.arcgisonline.com).
+Categories:
+  - Navigation
+License: GPL-3.0-or-later
+AuthorName: AndreaDp271
+WebSite: https://andreadp271.github.io/Park_finder/
+SourceCode: https://github.com/AndreaDp271/Park_finder-APK
+IssueTracker: https://github.com/AndreaDp271/Park_finder-APK/issues
+
+AutoName: ParkMap
+
+RepoType: git
+Repo: https://github.com/AndreaDp271/Park_finder-APK.git
+Binaries: https://github.com/AndreaDp271/Park_finder-APK/releases/download/v%v/ParkMap-%v.apk
+
+Builds:
+  - versionName: 2.1.2
+    versionCode: 103
+    commit: 816ff43471c9ca4f2f657ee0a0d88974a713b73a
+    subdir: app
+    gradle:
+      - yes
+
+AllowedAPKSigningKeys: 7d68b75f8f9a69db0693dd88d6932f6c8325fecd4604656c52ab8b980c554d7f
+
+MaintainerNotes: |-
+  The app has an optional update check against the GitHub releases for users who sideload the APK.
+  It is disabled when the app was installed by an app store (installer other than the system
+  package installer, see Updater.fromStore), so it never runs in the F-Droid build.
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 2.1.2
+CurrentVersionCode: 103
